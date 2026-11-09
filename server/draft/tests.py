@@ -700,3 +700,43 @@ class CoachKidCrossTenantTests(TestCase):
         self.own_player.refresh_from_db()
         self.assertFalse(self.own_player.is_coach_kid)
         self.assertIsNone(self.own_player.coach_team_id)
+
+
+class DraftPickAuthorizationTests(CrossTenantTestBase):
+    def setUp(self):
+        super().setUp()
+        self.draft_state = DraftService.start_draft(
+            division_id=self.victim_division.id,
+            draft_format="snake",
+            draft_order=[t.id for t in self.victim_teams],
+        )
+
+    def _pick(self, user):
+        self.client.force_login(user)
+        return self.client.post(
+            "/api/draft/pick/",
+            data=json.dumps({
+                "draft_state_id": str(self.draft_state.id),
+                "player_id": str(self.victim_players[0].id),
+                "team_id": str(self.draft_state.current_team_id),
+            }),
+            content_type="application/json",
+        )
+
+    def test_non_admin_member_cannot_make_pick(self):
+        response = self._pick(self.viewer)
+        self.assertEqual(response.status_code, 403)
+        self.victim_players[0].refresh_from_db()
+        self.assertFalse(self.victim_players[0].is_drafted)
+
+    def test_admin_of_other_league_cannot_make_pick(self):
+        response = self._pick(self.attacker)
+        self.assertEqual(response.status_code, 403)
+        self.victim_players[0].refresh_from_db()
+        self.assertFalse(self.victim_players[0].is_drafted)
+
+    def test_league_admin_can_make_pick(self):
+        response = self._pick(self.victim_admin)
+        self.assertEqual(response.status_code, 200)
+        self.victim_players[0].refresh_from_db()
+        self.assertTrue(self.victim_players[0].is_drafted)
