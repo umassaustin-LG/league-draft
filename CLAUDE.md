@@ -40,7 +40,7 @@ Has name, roster (drafted players), totalScore, draftPosition, coachKids array, 
 - **LeagueMembership**: Users can belong to multiple leagues with roles (admin/member)
 - **TenantMiddleware**: Injects `request.league` based on user's membership or X-League-ID header
 - **Session-based auth**: Django sessions with CSRF protection
-- **Rate limiting**: Custom throttling classes (AuthRateThrottle, PasswordResetRateThrottle)
+- **Rate limiting**: `RateLimiter` in `server/draft/views/helpers.py`, with counters in a shared DB table (`RateLimitCounter`) keyed by client IP (`get_client_ip`, which honors `NUM_TRUSTED_PROXIES`) and, for login failures and reset emails, by account
 - **Session timeout**: 24-hour expiration (SESSION_COOKIE_AGE)
 
 ### State Management
@@ -75,7 +75,7 @@ Has name, roster (drafted players), totalScore, draftPosition, coachKids array, 
 | `server/draft/transformers.py` | Data transformers for snake_case/camelCase conversion between API and frontend |
 | `server/draft/services.py` | Draft business logic (start, pick, undo, trade) |
 | `server/draft/middleware.py` | TenantMiddleware for multi-tenancy |
-| `server/draft/throttling.py` | Rate limiting classes (AuthRateThrottle, PasswordResetRateThrottle) |
+| `server/draft/views/helpers.py` | View helpers, `get_client_ip`, `RateLimiter` and `rate_limit` decorator |
 | `server/draft/validators.py` | Custom password validators (StrongPasswordValidator) |
 | `src/utils/passwordValidation.ts` | Client-side password validation matching Django validators |
 | `src/components/profile/*.tsx` | Profile page, member management, invitations |
@@ -217,7 +217,8 @@ docker compose exec api python manage.py migrate
 - POST `/api/auth/password-reset/confirm/` - Confirm password reset
 
 **Security Features:**
-- Rate limiting on auth endpoints (5/min for login/register, 3/hr for password reset)
+- Rate limiting on auth endpoints (5/min per IP for login/register, 3/hr per IP and per email for password reset, 10 failed logins/hr per account)
+- Client IP comes from `REMOTE_ADDR` unless `NUM_TRUSTED_PROXIES` is set (k8s sets 1 for ingress-nginx); then the X-Forwarded-For entry added by the outermost trusted proxy is used
 - Session timeout after 24 hours (SESSION_COOKIE_AGE = 86400)
 - CSRF protection with cookie-based tokens
 - Password validation: min 8 chars, not entirely numeric, not common passwords

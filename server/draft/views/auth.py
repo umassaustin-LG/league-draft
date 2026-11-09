@@ -34,6 +34,10 @@ from .helpers import (
     auth_rate_limiter,
     password_reset_rate_limiter,
     anon_rate_limiter,
+    login_failure_rate_limiter,
+    password_reset_email_rate_limiter,
+    account_identifier,
+    rate_limited_response,
 )
 
 User = get_user_model()
@@ -120,6 +124,11 @@ def login_view(request):
     if errors:
         return json_response(errors, status=400)
 
+    account = account_identifier(cleaned["email"])
+    blocked, retry_after = login_failure_rate_limiter.is_blocked(account)
+    if blocked:
+        return rate_limited_response(retry_after)
+
     user = authenticate(
         request,
         username=cleaned["email"],
@@ -127,6 +136,7 @@ def login_view(request):
     )
 
     if user is None:
+        login_failure_rate_limiter.hit(account)
         return json_response({"error": "Invalid email or password"}, status=401)
 
     login(request, user)
@@ -212,6 +222,13 @@ def password_reset_request_view(request):
         return json_response(errors, status=400)
 
     email = cleaned["email"]
+    generic_response = json_response({
+        "message": "If an account exists with this email, a reset link has been sent."
+    })
+
+    allowed, _ = password_reset_email_rate_limiter.hit(account_identifier(email))
+    if not allowed:
+        return generic_response
 
     # Always return success to prevent email enumeration
     try:
@@ -253,9 +270,7 @@ Little League Draft Team
         # Don't reveal that the user doesn't exist
         pass
 
-    return json_response({
-        "message": "If an account exists with this email, a reset link has been sent."
-    })
+    return generic_response
 
 
 @require_http_methods(["POST"])
