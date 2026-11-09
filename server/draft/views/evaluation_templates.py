@@ -12,6 +12,7 @@ from .helpers import (
     json_response,
     parse_json_body,
     require_auth,
+    require_organization_admin,
     get_organization_from_request,
 )
 
@@ -31,6 +32,10 @@ def evaluation_templates_list_create(request):
             is_active=True,
         ).order_by("-updated_at")
         return json_response([transform_evaluation_template(t) for t in templates])
+
+    denied = require_organization_admin(request, organization)
+    if denied:
+        return denied
 
     # POST - create template
     data, parse_error = parse_json_body(request)
@@ -68,6 +73,10 @@ def evaluation_template_detail(request, pk):
 
     if request.method == "GET":
         return json_response(transform_evaluation_template(template))
+
+    denied = require_organization_admin(request, template.organization)
+    if denied:
+        return denied
 
     if request.method == "DELETE":
         if template.is_locked:

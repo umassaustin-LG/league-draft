@@ -2,16 +2,18 @@
 Team views (replaces DRF TeamViewSet).
 """
 
+from django.core.exceptions import ValidationError
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.http import require_http_methods
 
-from ..models import Team, Player
+from ..models import Division, Team, Player
 from ..transformers import transform_team
 from ..input_validators import validate_team_update_data
 from .helpers import (
     json_response,
     parse_json_body,
     require_auth,
+    require_division_admin,
     get_organization_from_request,
 )
 
@@ -48,12 +50,26 @@ def teams_list_create(request):
     if not division_id:
         return json_response({"error": "division_id is required"}, status=400)
 
+    try:
+        if request.user.role == "master_admin":
+            division = Division.objects.get(id=division_id)
+        elif organization:
+            division = Division.objects.get(id=division_id, organization=organization)
+        else:
+            return json_response({"error": "Division not found"}, status=404)
+    except (Division.DoesNotExist, ValueError, ValidationError):
+        return json_response({"error": "Division not found"}, status=404)
+
+    denied = require_division_admin(request, division)
+    if denied:
+        return denied
+
     cleaned, errors = validate_team_update_data(data)
     if errors:
         return json_response(errors, status=400)
 
     team = Team.objects.create(
-        division_id=division_id,
+        division=division,
         **cleaned,
     )
 
@@ -79,6 +95,10 @@ def team_detail(request, pk):
 
     if request.method == "GET":
         return json_response(transform_team(team))
+
+    denied = require_division_admin(request, team.division)
+    if denied:
+        return denied
 
     # PUT or PATCH - update
     data, parse_error = parse_json_body(request)
@@ -126,6 +146,20 @@ def teams_bulk_update(request):
     if not isinstance(teams_data, list):
         return json_response({"error": "teams must be a list"}, status=400)
 
+    try:
+        if request.user.role == "master_admin":
+            division = Division.objects.get(id=division_id)
+        elif organization:
+            division = Division.objects.get(id=division_id, organization=organization)
+        else:
+            return json_response({"error": "Division not found"}, status=404)
+    except (Division.DoesNotExist, ValueError, ValidationError):
+        return json_response({"error": "Division not found"}, status=404)
+
+    denied = require_division_admin(request, division)
+    if denied:
+        return denied
+
     updated_teams = []
     for team_data in teams_data:
         team_id = team_data.pop("id", None)
@@ -133,13 +167,8 @@ def teams_bulk_update(request):
             continue
 
         try:
-            if request.user.role == "master_admin":
-                team = Team.objects.get(id=team_id, division_id=division_id)
-            elif organization:
-                team = Team.objects.get(id=team_id, division_id=division_id, division__organization=organization)
-            else:
-                continue
-        except Team.DoesNotExist:
+            team = Team.objects.get(id=team_id, division=division)
+        except (Team.DoesNotExist, ValueError, ValidationError):
             continue
 
         cleaned, errors = validate_team_update_data(team_data)
@@ -171,6 +200,10 @@ def team_assign_coach_kid(request, pk):
     except Team.DoesNotExist:
         return json_response({"error": "Not found"}, status=404)
 
+    denied = require_division_admin(request, team.division)
+    if denied:
+        return denied
+
     # Protect during/after draft
     if team.division.phase in ("draft", "complete"):
         return json_response(
@@ -187,8 +220,8 @@ def team_assign_coach_kid(request, pk):
         return json_response({"error": "player_id is required"}, status=400)
 
     try:
-        player = Player.objects.get(id=player_id)
-    except Player.DoesNotExist:
+        player = Player.objects.get(id=player_id, division=team.division)
+    except (Player.DoesNotExist, ValueError, ValidationError):
         return json_response({"error": "Player not found"}, status=404)
 
     player.is_coach_kid = True
@@ -216,6 +249,10 @@ def team_remove_coach_kid(request, pk, player_id):
     except Team.DoesNotExist:
         return json_response({"error": "Not found"}, status=404)
 
+    denied = require_division_admin(request, team.division)
+    if denied:
+        return denied
+
     # Protect during/after draft
     if team.division.phase in ("draft", "complete"):
         return json_response(
@@ -224,8 +261,8 @@ def team_remove_coach_kid(request, pk, player_id):
         )
 
     try:
-        player = Player.objects.get(id=player_id)
-    except Player.DoesNotExist:
+        player = Player.objects.get(id=player_id, division=team.division)
+    except (Player.DoesNotExist, ValueError, ValidationError):
         return json_response({"error": "Player not found"}, status=404)
 
     player.is_coach_kid = False
