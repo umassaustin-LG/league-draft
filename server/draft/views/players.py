@@ -3,8 +3,8 @@ Player views (replaces DRF PlayerViewSet).
 """
 
 import math
-import uuid as uuid_module
 
+from django.core.exceptions import ValidationError
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.http import require_http_methods
 
@@ -17,6 +17,16 @@ from .helpers import (
     require_auth,
     get_organization_from_request,
 )
+
+
+def _get_division_team(team_id, division):
+    """Return the team with this ID only if it belongs to the division."""
+    if not team_id:
+        return None
+    try:
+        return Team.objects.get(id=team_id, division=division)
+    except (Team.DoesNotExist, ValueError, ValidationError):
+        return None
 
 
 @require_http_methods(["GET", "POST"])
@@ -81,9 +91,14 @@ def players_list_create(request):
         except Team.DoesNotExist:
             pass
 
+    locked_to_team = _get_division_team(cleaned.pop("locked_to_team_id", None), division)
+    drafted_by_team = _get_division_team(cleaned.pop("drafted_by_team_id", None), division)
+
     player = Player.objects.create(
         division=division,
         coach_team=coach_team,
+        locked_to_team=locked_to_team,
+        drafted_by_team=drafted_by_team,
         **cleaned,
     )
 
@@ -142,6 +157,11 @@ def player_detail(request, pk):
             player.coach_team = Team.objects.get(id=coach_team_id, division=player.division)
         except Team.DoesNotExist:
             player.coach_team = None
+
+    if "locked_to_team_id" in cleaned:
+        player.locked_to_team = _get_division_team(cleaned.pop("locked_to_team_id"), player.division)
+    if "drafted_by_team_id" in cleaned:
+        player.drafted_by_team = _get_division_team(cleaned.pop("drafted_by_team_id"), player.division)
 
     for attr, value in cleaned.items():
         setattr(player, attr, value)
@@ -206,28 +226,9 @@ def players_bulk_create(request):
         # Store sibling_id for later remapping, then clear it
         old_sibling_id = player_data.pop("sibling_id", None)
 
-        # Sanitize remaining UUID fields - clear invalid values
-        for uuid_field in ["locked_to_team_id", "drafted_by_team_id"]:
-            if uuid_field in player_data and player_data[uuid_field]:
-                try:
-                    uuid_module.UUID(str(player_data[uuid_field]))
-                except (ValueError, AttributeError):
-                    player_data[uuid_field] = None
-
-        # Convert UUID fields to actual relations
-        locked_to_team = None
-        if player_data.get("locked_to_team_id"):
-            try:
-                locked_to_team = Team.objects.get(id=player_data.pop("locked_to_team_id"))
-            except Team.DoesNotExist:
-                player_data.pop("locked_to_team_id", None)
-
-        drafted_by_team = None
-        if player_data.get("drafted_by_team_id"):
-            try:
-                drafted_by_team = Team.objects.get(id=player_data.pop("drafted_by_team_id"))
-            except Team.DoesNotExist:
-                player_data.pop("drafted_by_team_id", None)
+        # Team references must point at teams in this division
+        locked_to_team = _get_division_team(player_data.pop("locked_to_team_id", None), division)
+        drafted_by_team = _get_division_team(player_data.pop("drafted_by_team_id", None), division)
 
         player = Player.objects.create(
             division=division,
