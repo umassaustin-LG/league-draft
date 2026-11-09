@@ -2,10 +2,12 @@
 Team views (replaces DRF TeamViewSet).
 """
 
+from django.core.exceptions import ValidationError
+from django.db.models import Q
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.http import require_http_methods
 
-from ..models import Team, Player
+from ..models import Division, Team, Player
 from ..transformers import transform_team
 from ..input_validators import validate_team_update_data
 from .helpers import (
@@ -48,12 +50,24 @@ def teams_list_create(request):
     if not division_id:
         return json_response({"error": "division_id is required"}, status=400)
 
+    try:
+        if request.user.role == "master_admin":
+            division = Division.objects.get(id=division_id)
+        elif organization:
+            division = Division.objects.get(
+                Q(id=division_id) & (Q(organization=organization) | Q(owner=request.user))
+            )
+        else:
+            division = Division.objects.get(id=division_id, owner=request.user)
+    except (Division.DoesNotExist, ValidationError):
+        return json_response({"error": "Division not found"}, status=404)
+
     cleaned, errors = validate_team_update_data(data)
     if errors:
         return json_response(errors, status=400)
 
     team = Team.objects.create(
-        division_id=division_id,
+        division=division,
         **cleaned,
     )
 
