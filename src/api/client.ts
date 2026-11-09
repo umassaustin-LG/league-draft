@@ -1107,7 +1107,6 @@ export const api = {
     const body: Record<string, unknown> = {};
     if (data.firstName !== undefined) body.first_name = data.firstName;
     if (data.lastName !== undefined) body.last_name = data.lastName;
-    if (data.email !== undefined) body.email = data.email;
 
     const response = await fetchWithCSRFRetry(`${API_BASE_URL}/auth/me/`, {
       ...getDefaultOptions('PATCH'),
