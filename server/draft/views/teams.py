@@ -187,7 +187,7 @@ def team_assign_coach_kid(request, pk):
         return json_response({"error": "player_id is required"}, status=400)
 
     try:
-        player = Player.objects.get(id=player_id)
+        player = Player.objects.get(id=player_id, division=team.division)
     except Player.DoesNotExist:
         return json_response({"error": "Player not found"}, status=404)
 
@@ -224,7 +224,7 @@ def team_remove_coach_kid(request, pk, player_id):
         )
 
     try:
-        player = Player.objects.get(id=player_id)
+        player = Player.objects.get(id=player_id, division=team.division)
     except Player.DoesNotExist:
         return json_response({"error": "Player not found"}, status=404)
 
