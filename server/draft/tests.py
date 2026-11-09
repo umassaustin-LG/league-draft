@@ -15,6 +15,7 @@ from .models import (
     OrganizationMembership,
     Player,
     RateLimitCounter,
+    Season,
     Team,
     User,
 )
@@ -196,6 +197,9 @@ class OrgAdminWriteAuthorizationTests(TestCase):
             little_league_age=11, birthday="2014-01-01",
         )
         self.template = EvaluationTemplate.objects.create(organization=self.org, name="Default")
+        self.season = Season.objects.create(
+            organization=self.org, name="Spring", year=2026, template=self.template,
+        )
 
     def _request(self, user, method, url, data=None, org=None):
         self.client.force_login(user)
@@ -221,6 +225,9 @@ class OrgAdminWriteAuthorizationTests(TestCase):
             ("post", "/api/evaluation-templates/", {"name": "Evil"}),
             ("patch", f"/api/evaluation-templates/{self.template.id}/", {"name": "Evil"}),
             ("delete", f"/api/evaluation-templates/{self.template.id}/", None),
+            ("post", "/api/seasons/", {"name": "Fall", "year": 2026, "template_id": str(self.template.id)}),
+            ("patch", f"/api/seasons/{self.season.id}/", {"name": "Hacked"}),
+            ("delete", f"/api/seasons/{self.season.id}/", None),
         ]
 
     def test_non_admin_member_cannot_write(self):
@@ -240,6 +247,9 @@ class OrgAdminWriteAuthorizationTests(TestCase):
         self.assertEqual(self.template.name, "Default")
         self.assertTrue(self.template.is_active)
         self.assertEqual(EvaluationTemplate.objects.filter(organization=self.org).count(), 1)
+        self.season.refresh_from_db()
+        self.assertEqual(self.season.name, "Spring")
+        self.assertEqual(Season.objects.filter(organization=self.org).count(), 1)
 
     def test_non_admin_member_can_still_read(self):
         div = str(self.division.id)
@@ -250,6 +260,8 @@ class OrgAdminWriteAuthorizationTests(TestCase):
             f"/api/teams/{self.team.id}/",
             "/api/evaluation-templates/",
             f"/api/evaluation-templates/{self.template.id}/",
+            "/api/seasons/",
+            f"/api/seasons/{self.season.id}/",
         ]:
             with self.subTest(url=url):
                 self.assertEqual(self._request(self.member, "get", url).status_code, 200)
@@ -270,6 +282,15 @@ class OrgAdminWriteAuthorizationTests(TestCase):
             self.admin, "patch", f"/api/evaluation-templates/{self.template.id}/", {"name": "Renamed"}
         )
         self.assertEqual(response.status_code, 200, response.content)
+        response = self._request(
+            self.admin, "post", "/api/seasons/",
+            {"name": "Fall", "year": 2026, "template_id": str(self.template.id)},
+        )
+        self.assertEqual(response.status_code, 201, response.content)
+        response = self._request(self.admin, "patch", f"/api/seasons/{self.season.id}/", {"name": "Summer"})
+        self.assertEqual(response.status_code, 200, response.content)
+        response = self._request(self.admin, "delete", f"/api/seasons/{self.season.id}/")
+        self.assertEqual(response.status_code, 204, response.content)
         response = self._request(
             self.admin, "delete", f"/api/players/delete_by_division/?division_id={self.division.id}"
         )
