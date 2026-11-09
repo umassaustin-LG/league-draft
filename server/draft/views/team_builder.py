@@ -9,6 +9,7 @@ Endpoints:
 """
 
 import uuid
+from django.db.models import Q
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.http import require_http_methods
 
@@ -23,11 +24,43 @@ from ..services.team_builder import (
 from ..transformers import transform_team_builder_result
 from ..input_validators import validate_team_builder_config, validate_team_builder_run
 from .helpers import (
+    get_organization_from_request,
     json_response,
     parse_json_body,
     require_auth,
     validate_uuid,
 )
+
+
+def _get_division_for_write(request, div_uuid):
+    """
+    Load a division the caller may modify via Team Builder.
+    Returns (division, None) or (None, error_response).
+    """
+    user = request.user
+    organization = get_organization_from_request(request)
+
+    try:
+        if user.role == "master_admin":
+            division = Division.objects.get(id=div_uuid)
+        elif organization:
+            division = Division.objects.get(
+                Q(id=div_uuid) & (Q(organization=organization) | Q(owner=user))
+            )
+        else:
+            division = Division.objects.get(id=div_uuid, owner=user)
+    except Division.DoesNotExist:
+        return None, json_response({"error": "Division not found"}, status=404)
+
+    can_write = (
+        user.role == "master_admin"
+        or division.owner_id == user.id
+        or (division.organization and user.is_org_admin(division.organization))
+    )
+    if not can_write:
+        return None, json_response({"error": "Permission denied"}, status=403)
+
+    return division, None
 
 
 def _build_team_builder_players(division: Division) -> list[TeamBuilderPlayer]:
@@ -140,11 +173,9 @@ def team_builder_run(request, division_id):
     if config_errors:
         return json_response(config_errors, status=400)
 
-    # Get division
-    try:
-        division = Division.objects.get(id=div_uuid)
-    except Division.DoesNotExist:
-        return json_response({"error": "Division not found"}, status=404)
+    division, access_error = _get_division_for_write(request, div_uuid)
+    if access_error:
+        return access_error
 
     # Verify mode is league-generated
     if division.mode != "league-generated":
@@ -212,11 +243,9 @@ def team_builder_apply(request, division_id):
     if config_errors:
         return json_response(config_errors, status=400)
 
-    # Get division
-    try:
-        division = Division.objects.get(id=div_uuid)
-    except Division.DoesNotExist:
-        return json_response({"error": "Division not found"}, status=404)
+    division, access_error = _get_division_for_write(request, div_uuid)
+    if access_error:
+        return access_error
 
     # Verify mode is league-generated
     if division.mode != "league-generated":
@@ -291,11 +320,9 @@ def team_builder_update_requests(request, division_id):
     if parse_error:
         return json_response({"error": parse_error}, status=400)
 
-    # Get division
-    try:
-        division = Division.objects.get(id=div_uuid)
-    except Division.DoesNotExist:
-        return json_response({"error": "Division not found"}, status=404)
+    division, access_error = _get_division_for_write(request, div_uuid)
+    if access_error:
+        return access_error
 
     # Update each player
     players_data = data.get("players", [])
