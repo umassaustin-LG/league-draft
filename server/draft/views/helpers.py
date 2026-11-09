@@ -217,7 +217,9 @@ class RateLimiter:
             key=key, defaults={"count": 1, "expires_at": expires_at}
         )
         if created:
-            RateLimitCounter.objects.filter(expires_at__lt=timezone.now()).delete()
+            RateLimitCounter.objects.filter(
+                expires_at__lt=datetime.fromtimestamp(time.time(), tz=dt_timezone.utc)
+            ).delete()
             count = 1
         else:
             RateLimitCounter.objects.filter(pk=key).update(count=F("count") + 1)
