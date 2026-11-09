@@ -14,7 +14,6 @@ from typing import Any, Optional, Tuple
 from django.conf import settings
 from django.db.models import F
 from django.http import JsonResponse
-from django.utils import timezone
 
 from ..models import RateLimitCounter
 
