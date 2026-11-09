@@ -155,12 +155,7 @@ def validate_profile_update_data(
             cleaned["last_name"] = str(last_name).strip() if last_name else ""
 
     if "email" in data:
-        email = data["email"]
-        cleaned_email, email_error = validate_email(email, exclude_user_id=user.pk)
-        if email_error:
-            errors["email"] = [email_error]
-        else:
-            cleaned["email"] = cleaned_email
+        errors["email"] = ["Email cannot be changed"]
 
     if errors:
         return None, errors

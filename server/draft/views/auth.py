@@ -164,8 +164,6 @@ def me_view(request):
         user.first_name = cleaned["first_name"]
     if "last_name" in cleaned:
         user.last_name = cleaned["last_name"]
-    if "email" in cleaned:
-        user.email = cleaned["email"]
     user.save()
 
     return json_response(transform_user(user))
