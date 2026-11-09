@@ -24,6 +24,11 @@ DEBUG = os.environ.get("DEBUG", "True").lower() == "true"
 
 ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 
+# Number of reverse proxies in front of the app that append to X-Forwarded-For
+# (e.g. 1 for ingress-nginx). 0 means X-Forwarded-For is ignored and REMOTE_ADDR
+# is used as the client IP for rate limiting.
+NUM_TRUSTED_PROXIES = int(os.environ.get("NUM_TRUSTED_PROXIES", "0"))
+
 # Application definition
 INSTALLED_APPS = [
     "django.contrib.admin",
