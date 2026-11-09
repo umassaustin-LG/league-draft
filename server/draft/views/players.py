@@ -15,6 +15,7 @@ from .helpers import (
     json_response,
     parse_json_body,
     require_auth,
+    require_division_admin,
     get_organization_from_request,
 )
 
@@ -71,6 +72,10 @@ def players_list_create(request):
     except Division.DoesNotExist:
         return json_response({"error": "Division not found"}, status=404)
 
+    denied = require_division_admin(request, division)
+    if denied:
+        return denied
+
     # Protect division during/after draft
     if division.phase in ("draft", "complete"):
         return json_response(
@@ -124,6 +129,10 @@ def player_detail(request, pk):
 
     if request.method == "GET":
         return json_response(transform_player(player))
+
+    denied = require_division_admin(request, player.division)
+    if denied:
+        return denied
 
     if request.method == "DELETE":
         # Protect division during/after draft
@@ -197,6 +206,10 @@ def players_bulk_create(request):
             return json_response({"error": "Division not found"}, status=404)
     except Division.DoesNotExist:
         return json_response({"error": "Division not found"}, status=404)
+
+    denied = require_division_admin(request, division)
+    if denied:
+        return denied
 
     # Protect division during/after draft
     if division.phase in ("draft", "complete"):
@@ -297,6 +310,10 @@ def players_delete_by_division(request):
             return json_response({"error": "Division not found"}, status=404)
     except Division.DoesNotExist:
         return json_response({"error": "Division not found"}, status=404)
+
+    denied = require_division_admin(request, division)
+    if denied:
+        return denied
 
     # Protect division during/after draft
     if division.phase in ("draft", "complete"):

@@ -90,6 +90,31 @@ def require_org_admin(view_func):
 require_league_admin = require_org_admin
 
 
+def can_manage_division(user, division) -> bool:
+    """Owner of a personal division, admin of the division's own organization, or master admin."""
+    if user.role == "master_admin":
+        return True
+    if division.owner_id is not None and division.owner_id == user.id:
+        return True
+    return bool(division.organization_id and user.is_org_admin(division.organization))
+
+
+def require_division_admin(request, division) -> Optional[JsonResponse]:
+    """Return a 403 response unless the user can manage the division, else None."""
+    if can_manage_division(request.user, division):
+        return None
+    return json_response({"error": "Only organization admins can perform this action"}, status=403)
+
+
+def require_organization_admin(request, organization) -> Optional[JsonResponse]:
+    """Return a 403 response unless the user is admin of the given organization, else None."""
+    if request.user.role == "master_admin":
+        return None
+    if organization and request.user.is_org_admin(organization):
+        return None
+    return json_response({"error": "Only organization admins can perform this action"}, status=403)
+
+
 def get_organization_from_request(request):
     """Get the organization from the request (set by TenantMiddleware)."""
     return getattr(request, "organization", None)
