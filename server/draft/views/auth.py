@@ -36,7 +36,7 @@ from .helpers import (
     anon_rate_limiter,
     login_failure_rate_limiter,
     password_reset_email_rate_limiter,
-    account_identifier,
+    account_source_identifier,
     rate_limited_response,
 )
 
@@ -124,7 +124,7 @@ def login_view(request):
     if errors:
         return json_response(errors, status=400)
 
-    account = account_identifier(cleaned["email"])
+    account = account_source_identifier(request, cleaned["email"])
     blocked, retry_after = login_failure_rate_limiter.is_blocked(account)
     if blocked:
         return rate_limited_response(retry_after)
@@ -224,7 +224,7 @@ def password_reset_request_view(request):
         "message": "If an account exists with this email, a reset link has been sent."
     })
 
-    allowed, _ = password_reset_email_rate_limiter.hit(account_identifier(email))
+    allowed, _ = password_reset_email_rate_limiter.hit(account_source_identifier(request, email))
     if not allowed:
         return generic_response
 

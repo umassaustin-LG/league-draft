@@ -239,7 +239,7 @@ class RateLimiter:
 auth_rate_limiter = RateLimiter("auth", "5/minute")
 password_reset_rate_limiter = RateLimiter("password_reset", "3/hour")
 anon_rate_limiter = RateLimiter("anon", "100/hour")
-# Per-account limiters, keyed by normalized email, so rotating source IPs doesn't help
+# Per-account limiters, keyed by normalized email and client IP
 login_failure_rate_limiter = RateLimiter("login_failure", "10/hour")
 password_reset_email_rate_limiter = RateLimiter("password_reset_email", "3/hour")
 
@@ -247,6 +247,11 @@ password_reset_email_rate_limiter = RateLimiter("password_reset_email", "3/hour"
 def account_identifier(email: str) -> str:
     """Normalize an email address for use as a per-account rate limit identifier."""
     return (email or "").strip().lower()
+
+
+def account_source_identifier(request, email: str) -> str:
+    """Per-account-per-source rate limit key, so one client can't lock out an account for everyone."""
+    return f"{account_identifier(email)}|{get_client_ip(request)}"
 
 
 def rate_limited_response(retry_after: Optional[int]) -> JsonResponse:

@@ -55,10 +55,15 @@ class FrozenWindowMixin:
     def setUp(self):
         super().setUp()
         frozen = mock.Mock()
-        frozen.time.return_value = (time.time() // 3600) * 3600 + 1
+        self.hour_start = (time.time() // 3600) * 3600
+        frozen.time.return_value = self.hour_start + 1
+        self.frozen_time = frozen
         patcher = mock.patch("draft.views.helpers.time", frozen)
         patcher.start()
         self.addCleanup(patcher.stop)
+
+    def advance(self, seconds):
+        self.frozen_time.time.return_value += seconds
 
 
 class RateLimiterTests(FrozenWindowMixin, TestCase):
@@ -101,27 +106,52 @@ class AuthRateLimitTests(FrozenWindowMixin, TestCase):
         self.assertEqual(statuses[5], 429)
 
     @override_settings(NUM_TRUSTED_PROXIES=1)
-    def test_per_account_failure_limit_across_ips(self):
-        for i in range(10):
-            response = self._login("wrong", f"6.6.6.6, 198.51.100.{i}")
+    def test_failed_logins_from_one_ip_do_not_block_other_ip(self):
+        for _ in range(5):
+            response = self._login("wrong", "6.6.6.6, 198.51.100.1")
             self.assertEqual(response.status_code, 401)
-        response = self._login("Correct-Horse-9", "198.51.100.200")
+        self.advance(61)
+
+        for _ in range(5):
+            response = self._login("wrong", "6.6.6.6, 198.51.100.1")
+            self.assertEqual(response.status_code, 401)
+        self.advance(61)
+
+        response = self._login("Correct-Horse-9", "6.6.6.6, 198.51.100.1")
         self.assertEqual(response.status_code, 429)
 
-        other = self._login("wrong", "198.51.100.201", email="bob@example.com")
-        self.assertEqual(other.status_code, 401)
+        other = self._login("Correct-Horse-9", "6.6.6.6, 198.51.100.2")
+        self.assertEqual(other.status_code, 200)
 
     @override_settings(NUM_TRUSTED_PROXIES=1)
-    def test_password_reset_emails_limited_per_account(self):
-        for i in range(5):
+    def test_password_reset_emails_limited_per_account_and_ip(self):
+        for _ in range(3):
             response = self.client.post(
                 reverse("password-reset-request"),
                 data=json.dumps({"email": "alice@example.com"}),
                 content_type="application/json",
-                HTTP_X_FORWARDED_FOR=f"198.51.100.{i}",
+                HTTP_X_FORWARDED_FOR="6.6.6.6, 198.51.100.1",
             )
             self.assertEqual(response.status_code, 200)
         self.assertEqual(len(mail.outbox), 3)
+
+        blocked = self.client.post(
+            reverse("password-reset-request"),
+            data=json.dumps({"email": "alice@example.com"}),
+            content_type="application/json",
+            HTTP_X_FORWARDED_FOR="6.6.6.6, 198.51.100.1",
+        )
+        self.assertEqual(blocked.status_code, 429)
+        self.assertEqual(len(mail.outbox), 3)
+
+        other_ip = self.client.post(
+            reverse("password-reset-request"),
+            data=json.dumps({"email": "alice@example.com"}),
+            content_type="application/json",
+            HTTP_X_FORWARDED_FOR="6.6.6.6, 198.51.100.2",
+        )
+        self.assertEqual(other_ip.status_code, 200)
+        self.assertEqual(len(mail.outbox), 4)
 
 
 class TeamCreateTenantIsolationTests(TestCase):
