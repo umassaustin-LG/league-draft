@@ -67,7 +67,6 @@ export interface RegisterData {
 export interface ProfileUpdateData {
   firstName?: string;
   lastName?: string;
-  email?: string;
 }
 
 export interface ChangePasswordData {

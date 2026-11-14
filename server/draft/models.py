@@ -744,3 +744,17 @@ class Trade(models.Model):
 
     def __str__(self):
         return f"Trade at {self.timestamp}"
+
+
+class RateLimitCounter(models.Model):
+    """Fixed-window request counter shared by all API processes for rate limiting."""
+
+    key = models.CharField(max_length=64, primary_key=True)
+    count = models.PositiveIntegerField(default=0)
+    expires_at = models.DateTimeField(db_index=True)
+
+    class Meta:
+        db_table = "rate_limit_counters"
+
+    def __str__(self):
+        return f"{self.key}: {self.count}"

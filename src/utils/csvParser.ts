@@ -1,6 +1,7 @@
 import Papa from 'papaparse';
 import { CSVRow, Player, Team, ParsedCSVData, ColumnMapping, DEFAULT_SCORING_WEIGHTS, ScoringMode, ScoringWeights } from '../types';
 import { calculatePlayerScore, calculatePreWeightedScores } from './scoreCalculation';
+import { neutralizeFormula } from './exports';
 
 // Coach assignment extracted from CSV
 export interface CoachAssignment {
@@ -400,5 +401,5 @@ export const exportToCSV = (teams: Team[]): string => {
     rows.push([]); // Empty row between teams
   });
 
-  return Papa.unparse(rows);
+  return Papa.unparse(rows.map(row => row.map(neutralizeFormula)));
 };

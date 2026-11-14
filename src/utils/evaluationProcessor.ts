@@ -9,6 +9,7 @@ import {
   DEFAULT_FIELD_WEIGHTS,
 } from '../types/evaluation';
 import { Player } from '../types';
+import { toCSVRow } from './exports';
 import {
   normalizeScore,
   getBestTime,
@@ -665,7 +666,7 @@ export function generateEvaluationCSV(
     p.weightedTotal.toFixed(1),
   ]);
 
-  return [headers.join(','), ...rows.map((row) => row.join(','))].join('\n');
+  return [toCSVRow(headers), ...rows.map(toCSVRow)].join('\n');
 }
 
 // Re-export downloadCSV as downloadEvaluationCSV for backwards compatibility

@@ -22,6 +22,8 @@ spec:
           env:
             - name: DEBUG
               value: "False"
+            - name: NUM_TRUSTED_PROXIES
+              value: "1"
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:

@@ -36,7 +36,13 @@ class DraftService:
                 )
             # Delete existing draft state (either no picks or force_restart=True)
             existing_draft.delete()
-        current_team = Team.objects.get(id=draft_order[0])
+
+        division_team_ids = set(
+            str(tid) for tid in Team.objects.filter(division=division).values_list("id", flat=True)
+        )
+        if not draft_order or any(str(tid) not in division_team_ids for tid in draft_order):
+            raise ValueError("Draft order contains teams not in this division")
+        current_team = Team.objects.get(id=draft_order[0], division=division)
 
         # Convert UUIDs to strings for JSON storage
         draft_order_str = [str(tid) for tid in draft_order]
@@ -89,11 +95,18 @@ class DraftService:
             raise ValueError("Must draft mandatory player first")
 
         # Verify player is available (use select_for_update to prevent race conditions)
-        player = Player.objects.select_for_update().get(id=player_id)
+        division = draft_state.division
+        try:
+            player = Player.objects.select_for_update().get(id=player_id, division=division)
+        except Player.DoesNotExist:
+            raise ValueError("Player not found in this division")
         if player.is_drafted:
             raise ValueError("Player is already drafted")
 
-        team = Team.objects.get(id=team_id)
+        try:
+            team = Team.objects.get(id=team_id, division=division)
+        except Team.DoesNotExist:
+            raise ValueError("Team not found in this division")
         overall_pick = draft_state.picks.count() + 1
 
         # Create the pick
@@ -146,9 +159,12 @@ class DraftService:
         if draft_state.mandatory_player_id:
             raise ValueError("Cannot skip - mandatory pick required")
 
+        division = draft_state.division
+        if not Team.objects.filter(id=team_id, division=division).exists():
+            raise ValueError("Team not found in this division")
+
         # Cannot skip if remaining players >= remaining draft spots
         # (all players must be drafted)
-        division = draft_state.division
         available_players = division.players.filter(is_drafted=False).count()
         total_picks = len(draft_state.draft_order) * division.roster_size
         picks_made = draft_state.picks.count()
@@ -289,16 +305,23 @@ class DraftService:
             raise ValueError("This trade was already processed")
 
         # Verify players belong to correct teams
-        player1 = Player.objects.get(id=player1_id)
-        player2 = Player.objects.get(id=player2_id)
+        division = draft_state.division
+        try:
+            player1 = Player.objects.get(id=player1_id, division=division)
+            player2 = Player.objects.get(id=player2_id, division=division)
+        except Player.DoesNotExist:
+            raise ValueError("Player not found in this division")
 
         if str(player1.drafted_by_team_id) != str(team1_id):
             raise ValueError("Player 1 does not belong to team 1")
         if str(player2.drafted_by_team_id) != str(team2_id):
             raise ValueError("Player 2 does not belong to team 2")
 
-        team1 = Team.objects.get(id=team1_id)
-        team2 = Team.objects.get(id=team2_id)
+        try:
+            team1 = Team.objects.get(id=team1_id, division=division)
+            team2 = Team.objects.get(id=team2_id, division=division)
+        except Team.DoesNotExist:
+            raise ValueError("Team not found in this division")
 
         # Create trade record
         Trade.objects.create(

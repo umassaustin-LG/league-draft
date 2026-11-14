@@ -12,6 +12,7 @@ from .helpers import (
     json_response,
     parse_json_body,
     require_auth,
+    require_organization_admin,
     get_organization_from_request,
 )
 
@@ -30,6 +31,10 @@ def seasons_list_create(request):
             organization=organization,
         ).order_by("-year", "-created_at")
         return json_response([transform_season(s) for s in seasons])
+
+    denied = require_organization_admin(request, organization)
+    if denied:
+        return denied
 
     # POST - create season
     data, parse_error = parse_json_body(request)
@@ -80,6 +85,10 @@ def season_detail(request, pk):
 
     if request.method == "GET":
         return json_response(transform_season(season))
+
+    denied = require_organization_admin(request, season.organization)
+    if denied:
+        return denied
 
     if request.method == "DELETE":
         season.delete()

@@ -11,6 +11,49 @@ function escapeHtml(text: string): string {
   return div.innerHTML;
 }
 
+const FORMULA_TRIGGER = /^[\s"]*[=+\-@]|^[\t\r]/;
+const PLAIN_NUMBER = /^[+-]?\d+(\.\d+)?$/;
+
+/**
+ * Prefix a single quote to values a spreadsheet would run as a formula
+ * (leading =, +, -, @, tab, or CR). Plain numbers such as "-1.5" are left as-is.
+ */
+export function neutralizeFormula(value: string): string {
+  if (FORMULA_TRIGGER.test(value) && !PLAIN_NUMBER.test(value)) {
+    return `'${value}`;
+  }
+  return value;
+}
+
+/**
+ * Escape a single CSV cell: neutralize formulas, then quote if needed.
+ */
+export function escapeCSV(value: string): string {
+  const safe = neutralizeFormula(value);
+  if (/[",\r\n]/.test(safe)) {
+    return `"${safe.replace(/"/g, '""')}"`;
+  }
+  return safe;
+}
+
+/**
+ * Build one CSV line from raw cell values.
+ */
+export function toCSVRow(values: string[]): string {
+  return values.map(escapeCSV).join(',');
+}
+
+/**
+ * Neutralize user text embedded in plain-text reports that are downloaded as .csv.
+ * Commas and line breaks inside the value start new cells, so each piece is checked.
+ */
+function safeText(value: string): string {
+  return value
+    .split(/([,\r\n])/)
+    .map(part => (/^[,\r\n]$/.test(part) ? part : neutralizeFormula(part)))
+    .join('');
+}
+
 /**
  * Generate public rosters for distribution to families.
  * NO scores, NO draft order, NO rankings - just alphabetical player lists.
@@ -19,7 +62,7 @@ export function generatePublicRosters(teams: Team[], _players: Player[]): string
   const output = teams
     .sort((a, b) => getTeamDisplayName(a).localeCompare(getTeamDisplayName(b)))
     .map(team => {
-      const teamName = getTeamDisplayName(team);
+      const teamName = safeText(getTeamDisplayName(team));
       const headerLine = '═'.repeat(45);
       const dividerLine = '─'.repeat(45);
 
@@ -27,16 +70,16 @@ export function generatePublicRosters(teams: Team[], _players: Player[]): string
       const roster = team.roster
         .sort((a, b) => a.lastName.localeCompare(b.lastName))
         .map(p => {
-          const bibStr = p.bib ? ` (#${p.bib})` : '';
-          return `  ${p.lastName}, ${p.firstName}${bibStr}`;
+          const bibStr = p.bib ? ` (#${safeText(p.bib)})` : '';
+          return `  ${safeText(p.lastName)}, ${safeText(p.firstName)}${bibStr}`;
         })
         .join('\n');
 
       // Get manager name (headCoach is the primary field for manager's name)
-      const managerName = team.headCoach ? `Coach ${team.headCoach}` : 'TBD';
+      const managerName = team.headCoach ? `Coach ${safeText(team.headCoach)}` : 'TBD';
 
       // Get assistant coach
-      const assistantCoach = team.assistantCoach ? `Coach ${team.assistantCoach}` : 'None';
+      const assistantCoach = team.assistantCoach ? `Coach ${safeText(team.assistantCoach)}` : 'None';
 
       return `
 ${headerLine}
@@ -68,7 +111,7 @@ export function generateOfficialRecord(
   picks: DraftPick[],
   trades: Trade[] = []
 ): string {
-  const divisionName = division?.name || 'Draft';
+  const divisionName = safeText(division?.name || 'Draft');
   const date = new Date().toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'long',
@@ -105,7 +148,7 @@ ${headerLine}
         const team = teams.find(t => t.id === pick.teamId);
         if (!team) return;
 
-        const teamName = getTeamDisplayName(team).padEnd(18);
+        const teamName = safeText(getTeamDisplayName(team)).padEnd(18);
 
         // Handle skipped picks
         if (pick.wasSkipped) {
@@ -123,8 +166,8 @@ ${headerLine}
         if (player.siblingId) flags.push('👥');
         const flagStr = flags.length > 0 ? ' ' + flags.join('') : '';
 
-        const playerName = `${player.firstName} ${player.lastName}`;
-        const bibNum = player.bib ? `(#${player.bib})` : '';
+        const playerName = `${safeText(player.firstName)} ${safeText(player.lastName)}`;
+        const bibNum = player.bib ? `(#${safeText(player.bib)})` : '';
 
         output += `Pick ${pick.pick.toString().padStart(2)}:  ${teamName} →  ${playerName} ${bibNum}${flagStr}\n`;
       });
@@ -161,8 +204,8 @@ ${sectionLine}
         day: 'numeric'
       });
 
-      output += `Trade ${i + 1}: ${player1.firstName} ${player1.lastName} (${getTeamDisplayName(team1)}) ↔ ${player2.firstName} ${player2.lastName} (${getTeamDisplayName(team2)})\n`;
-      output += `         Reason: ${trade.reason}\n`;
+      output += `Trade ${i + 1}: ${safeText(player1.firstName)} ${safeText(player1.lastName)} (${safeText(getTeamDisplayName(team1))}) ↔ ${safeText(player2.firstName)} ${safeText(player2.lastName)} (${safeText(getTeamDisplayName(team2))})\n`;
+      output += `         Reason: ${safeText(trade.reason)}\n`;
       output += `         Approved: ${tradeDate}\n\n`;
     });
   }
@@ -246,10 +289,10 @@ export function generateSimulationDraftBoard(
   // Combine sections
   const output = [
     '=== DRAFT BOARD ===',
-    [gridHeader, ...gridRows].map(row => row.join(',')).join('\n'),
+    [gridHeader, ...gridRows].map(toCSVRow).join('\n'),
     '',
     '=== PICK BY PICK ===',
-    [pickHeader, ...pickRows].map(row => row.join(',')).join('\n')
+    [pickHeader, ...pickRows].map(toCSVRow).join('\n')
   ].join('\n');
 
   return output;
@@ -417,17 +460,9 @@ export function exportPlayersForReimport(players: Player[], teams: Team[]): stri
     ];
   });
 
-  // CSV escape function
-  const escapeCSV = (value: string): string => {
-    if (value.includes(',') || value.includes('"') || value.includes('\n')) {
-      return `"${value.replace(/"/g, '""')}"`;
-    }
-    return value;
-  };
-
   const csvContent = [
-    headers.map(escapeCSV).join(','),
-    ...rows.map(row => row.map(escapeCSV).join(','))
+    toCSVRow(headers),
+    ...rows.map(toCSVRow)
   ].join('\n');
 
   return csvContent;
@@ -511,17 +546,9 @@ export function generateHappinessReportCSV(players: HappinessReportPlayer[]): st
     return row;
   });
 
-  // CSV escape function
-  const escapeCSV = (value: string): string => {
-    if (value.includes(',') || value.includes('"') || value.includes('\n')) {
-      return `"${value.replace(/"/g, '""')}"`;
-    }
-    return value;
-  };
-
   const csvContent = [
-    headers.map(escapeCSV).join(','),
-    ...rows.map(row => row.map(escapeCSV).join(','))
+    toCSVRow(headers),
+    ...rows.map(toCSVRow)
   ].join('\n');
 
   return csvContent;

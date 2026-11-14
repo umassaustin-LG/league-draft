@@ -131,7 +131,7 @@ def draft_pick(request):
     except DraftState.DoesNotExist:
         return json_response({"error": "Draft not found"}, status=404)
 
-    error = _verify_division_access(request, draft_state.division)
+    error = _require_league_admin(request, draft_state.division)
     if error:
         return error
 
