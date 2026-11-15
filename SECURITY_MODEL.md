@@ -1,16 +1,16 @@
 # Threat model: league-draft, JAS-Test-Devin, microsoft.github.io
 
-_This is the threat model used to rank Devin security-scan findings for this system. It was written from the code and the user hasn't confirmed it yet. Edit it (especially "Out of scope / accepted risk" and the attacker profiles) so future scans rank findings against your actual priorities._
+_This is the threat model used to rank Devin security-scan findings for this system. It was written from the code (2026-11-08, updated 2026-11-12 after the Clubhouse app was merged to JAS-Test-Devin `main`) and the user hasn't confirmed it yet. Edit it (especially "Out of scope / accepted risk" and the attacker profiles) so future scans rank findings against your actual priorities._
 
 ## System overview
 
 | Repository | What it is | Security relevance |
 |---|---|---|
-| `umassaustin-LG/league-draft` | Little League draft app. React/Vite SPA (`src/`) plus a Django 5.2 function-view API (`server/`) on PostgreSQL. Deployed to GKE through CircleCI (`.circleci/config.yml`, image pushed to `us-east1-docker.pkg.dev/gaimplan-core/builds/league-draft`). k8s manifests are in `k8s/` (nginx ingress with TLS at `league-draft.gaimplan.com`, 2 replicas, secrets from `league-draft-secrets`). | **Primary target.** Multi-tenant, stores data about minors. |
-| `umassaustin-LG/JAS-Test-Devin` | The default branch (`main`) has only `README.md` and `package-lock.json`. The app code (a copy of league-draft plus LGLL evaluation work) lives on unmerged `devin/*` branches, which this scan does not cover. | Close to nothing to scan on `main`. |
-| `umassaustin-LG/microsoft.github.io` | Fork of Microsoft's GitHub Pages site: static HTML/Markdown, meta-refresh/JS redirect stubs (`index.html`, `presidio/`, `cadl/`, `reverse-proxy/`), code of conduct, MSRC `SECURITY.MD`. No server side. | Low. Realistic issues are open redirects, XSS in static pages, and third-party script includes. |
+| `umassaustin-LG/league-draft` | Little League draft app. A React/Vite SPA (`src/`) plus a Django function-view API (`server/`, no DRF) on PostgreSQL. Deployed to GKE through CircleCI (`.circleci/config.yml`, image `us-east1-docker.pkg.dev/gaimplan-core/builds/league-draft:latest`). `k8s/` has an nginx ingress with TLS at `league-draft.gaimplan.com`, 2 replicas, and secrets from `league-draft-secrets`. | **Primary target.** It is multi-tenant and stores data about minors. |
+| `umassaustin-LG/JAS-Test-Devin` | "Clubhouse" (formerly League Hub). It is a fork of league-draft plus a `server/hub` Django app (office, sponsors, public league portal, access/roles, web push), `src/hub/`, a PWA service worker (`public/sw.js`) and Workflow OS governance files. Since 2026-11-12 the app has been merged to `main` (PR #37 and earlier). It has its own `k8s/`, `Dockerfile` and `.circleci/`, and a live preview on AWS Lightsail (container service `lgll-hub` plus Lightsail Postgres). | **Second target.** It shares league-draft's tenant and role model and adds a public portal reachable by anonymous visitors, plus finer staff roles (League Admin, Scheduler, with permissions such as `league.manage`). |
+| `umassaustin-LG/microsoft.github.io` | Fork of Microsoft's GitHub Pages site: static HTML/Markdown, meta-refresh and JS redirect stubs (`index.html`, `presidio/`, `cadl/`, `reverse-proxy/`), the code of conduct, and the MSRC `SECURITY.MD` (a disclosure policy, not a security model). It has no server side. | Low. Realistic issues are open redirects, XSS in static pages and third-party script includes. |
 
-Infrastructure: there is no separate infrastructure repository. The infrastructure code is `league-draft/k8s/*.yaml`, `Dockerfile` and `.circleci/config.yml`. `docker-compose.yml` is for local development only.
+Infrastructure: there is no separate infrastructure repository. The infrastructure code is `league-draft/k8s/*.yaml`, `Dockerfile` and `.circleci/config.yml`; `docker-compose.yml` is for local development only. The JAS-Test-Devin Lightsail deployment has no infrastructure code in any repository.
 
 ## Trust boundaries
 
@@ -25,13 +25,13 @@ Infrastructure: there is no separate infrastructure repository. The infrastructu
 
 | Component | Covers |
 |---|---|
-| `Web client` | `league-draft/src/**`, `index.html`, `vite.config.ts` (SPA, CSV/Excel import parsing, exports, localStorage mode) |
-| `Auth` | `server/draft/views/auth.py`, `throttling.py`, `validators.py`, `input_validators.py`, `middleware.py`, `views/helpers.py` (`require_auth`, `require_org_admin`), auth/session/CSRF settings in `league_draft/settings.py` |
+| `Web client` | `league-draft/src/**`, `index.html`, `vite.config.ts` (the SPA, CSV/Excel import parsing, exports, localStorage mode) |
+| `Auth` | `server/draft/views/auth.py`, `throttling.py`, `validators.py`, `input_validators.py`, `middleware.py`, `views/helpers.py` (`require_auth`, `require_org_admin`), and the auth/session/CSRF settings in `league_draft/settings.py` |
 | `Leagues & membership` | `server/draft/views/leagues.py` (members, roles, invitations, join links, public join-link lookup) |
 | `Draft API` | `server/draft/views/{divisions,teams,players,draft,team_builder,evaluation_templates,seasons,coach_ratings}.py`, `services*.py`, `transformers.py`, `models.py`, `management/` |
 | `Infrastructure` | `league-draft/k8s/**`, `Dockerfile`, `.circleci/config.yml`, `docker-compose.yml`, `server/.env.example` |
 | `Static site` | everything in `umassaustin-LG/microsoft.github.io` |
-| `JAS-Test-Devin` | everything on `umassaustin-LG/JAS-Test-Devin` `main` |
+| `JAS-Test-Devin` | everything in `umassaustin-LG/JAS-Test-Devin` (`server/hub/**`, `src/hub/**`, `public/sw.js`, its fork of the league-draft code, and its `k8s/`/CI) |
 
 ## Entry points and who can reach them
 
@@ -78,8 +78,7 @@ None stated by the user yet.
 
 ## Open questions
 
-- Which assets matter most?
+- JAS-Test-Devin (Clubhouse): are trusted staff roles (League Admin, Scheduler) in scope as attackers, and is the public league portal a production surface?
 - Which attacker profiles matter, and are any ruled out?
-- Is anything out of scope or accepted risk (e.g. `microsoft.github.io` as a low-priority fork, dev-only config, legacy localStorage mode and e2e debug specs)?
-- Should JAS-Test-Devin stay in the scan, given `main` is nearly empty?
-- Which finding tags besides `Component` are wanted?
+- Is anything out of scope or accepted risk (e.g. `microsoft.github.io`, dev-only config, e2e debug specs or the legacy localStorage mode, the console email backend)?
+- Which finding tags are wanted besides `Component`?
