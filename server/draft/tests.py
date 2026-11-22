@@ -17,6 +17,7 @@ from .models import (
     RateLimitCounter,
     Season,
     Team,
+    Trade,
     User,
 )
 from .services import DraftService
@@ -770,3 +771,70 @@ class DraftPickAuthorizationTests(CrossTenantTestBase):
         self.assertEqual(response.status_code, 200)
         self.victim_players[0].refresh_from_db()
         self.assertTrue(self.victim_players[0].is_drafted)
+
+
+class CompletedRosterAuthorizationTests(CrossTenantTestBase):
+    def setUp(self):
+        super().setUp()
+        self.coach = User.objects.create_user("coach@example.com", "pw-Coach-123!")
+        OrganizationMembership.objects.create(
+            user=self.coach, organization=self.victim_org, role="coach"
+        )
+        self.victim_division.phase = "complete"
+        self.victim_division.save(update_fields=["phase"])
+        self.draft = DraftState.objects.create(
+            division=self.victim_division, draft_format="snake", is_draft_complete=True
+        )
+        team1, team2 = self.victim_teams
+        self.player1, self.player2 = self.victim_players[:2]
+        for player, team in ((self.player1, team1), (self.player2, team2)):
+            player.drafted_by_team = team
+            player.is_drafted = True
+            player.save(update_fields=["drafted_by_team", "is_drafted"])
+        self.team_url = reverse("team-detail", args=[team1.id])
+        self.trade_data = {
+            "draft_state_id": str(self.draft.id),
+            "team1_id": str(team1.id),
+            "team2_id": str(team2.id),
+            "player1_id": str(self.player1.id),
+            "player2_id": str(self.player2.id),
+            "reason": "Balance rosters",
+        }
+
+    def _trade(self):
+        return self.client.post(reverse("draft-trade"), self.trade_data, content_type="application/json")
+
+    def _rename_team(self):
+        return self.client.patch(self.team_url, {"name": "Rockets"}, content_type="application/json")
+
+    def test_coach_and_viewer_can_read_but_cannot_change_completed_rosters(self):
+        for user in (self.coach, self.viewer):
+            with self.subTest(user=user):
+                self.client.force_login(user)
+                division_url = reverse("division-detail", args=[self.victim_division.id])
+                response = self.client.get(division_url, {"include": "all"})
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json()["phase"], "complete")
+                self.assertEqual(self._rename_team().status_code, 403)
+                self.assertEqual(self._trade().status_code, 403)
+
+        self.victim_teams[0].refresh_from_db()
+        self.player1.refresh_from_db()
+        self.player2.refresh_from_db()
+        self.assertNotEqual(self.victim_teams[0].name, "Rockets")
+        self.assertEqual(self.player1.drafted_by_team_id, self.victim_teams[0].id)
+        self.assertEqual(self.player2.drafted_by_team_id, self.victim_teams[1].id)
+        self.assertFalse(Trade.objects.filter(draft_state=self.draft).exists())
+
+    def test_league_admin_can_rename_teams_and_trade_after_the_draft(self):
+        self.client.force_login(self.victim_admin)
+        self.assertEqual(self._rename_team().status_code, 200)
+        self.victim_teams[0].refresh_from_db()
+        self.assertEqual(self.victim_teams[0].name, "Rockets")
+        response = self._trade()
+        self.assertEqual(response.status_code, 200, response.content)
+        self.player1.refresh_from_db()
+        self.player2.refresh_from_db()
+        self.assertEqual(self.player1.drafted_by_team_id, self.victim_teams[1].id)
+        self.assertEqual(self.player2.drafted_by_team_id, self.victim_teams[0].id)
+        self.assertEqual(Trade.objects.filter(draft_state=self.draft).count(), 1)

@@ -105,9 +105,9 @@ Switch between two views using the toggle bar:
 - Options: "Go Back & Review" or "Finalize Draft"
 
 #### View Modes
-- **Admin View**: Full functionality (draft buttons, undo, reset, skip, confirmations)
-- **Public View**: Read-only display for spectators (no action column, no pending confirmations, "Live View" badge)
-- **Score Toggle**: Hide/show scores for presentation mode (affects both views)
+- **League admin**: Runs the draft (pick, undo, reset, skip, confirm).
+- **Coach and viewer**: Follow the live draft without draft controls.
+- **Presentation view**: Sign-in required; read-only with scores hidden (`?view=public`).
 
 ### Draft Simulation
 - Preview draft outcomes before committing
@@ -129,18 +129,14 @@ Switch between two views using the toggle bar:
   - Simulation draft boards (grid + sequential views with scores)
 - Print-ready formatting and clipboard copy
 
-### Dual-View Architecture
-- **Admin View**: Full control over all functions
-- **Public View**: Read-only live display for spectators
-- Real-time sync via localStorage
-- Access public view: `?view=public`
-
 ### League Management
 - **Multi-league support**: Users can belong to multiple leagues
-- **Role-based access**: Admin and member roles per league
-- **Member management**: View, invite, and remove league members
+- **Role-based access**: League admin, coach, and viewer roles per league
+- **Roster ownership**: Only league admins can edit shared teams or trade players after the draft.
+- **Member management**: Members can view the directory; league admins manage invitations and membership.
 - **Invite system**: Email invitations or shareable join links
-- **Profile management**: Update name, email, and password
+- **Profile management**: Update name and password
+- See the [league access and workflow model](docs/league-access.md).
 
 ### Security
 - **Session-based authentication**: Secure Django sessions with CSRF protection

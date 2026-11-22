@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { Plus, Play, Eye, Trash2, Calendar, Users, AlertCircle, LogOut, User, Settings, ClipboardList } from 'lucide-react';
 import { DivisionSummary, AppPhase, User as UserType } from '../types';
+import { canManageDivision, getDivisionView } from '../utils/divisionAccess';
 
 interface DivisionSelectorProps {
   divisions: DivisionSummary[];
   onSelectDivision: (divisionId: string) => void;
-  onCreateNew: () => void;
-  onDeleteDivision: (divisionId: string) => void;
+  onCreateNew?: () => void;
+  onDeleteDivision?: (divisionId: string) => void;
+  creationLeagueName?: string;
   user?: UserType | null;
   onLogout?: () => void;
   onOpenSettings?: () => void;
@@ -50,6 +52,7 @@ export const DivisionSelector = ({
   onSelectDivision,
   onCreateNew,
   onDeleteDivision,
+  creationLeagueName,
   user,
   onLogout,
   onOpenSettings,
@@ -59,7 +62,7 @@ export const DivisionSelector = ({
 
   const handleDelete = (divisionId: string) => {
     if (deleteConfirm === divisionId) {
-      onDeleteDivision(divisionId);
+      onDeleteDivision?.(divisionId);
       setDeleteConfirm(null);
     } else {
       setDeleteConfirm(divisionId);
@@ -72,7 +75,12 @@ export const DivisionSelector = ({
     if (a.phase === 'complete' && b.phase !== 'complete') return 1;
     if (a.phase !== 'complete' && b.phase === 'complete') return -1;
     return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-  });
+  }).map(division => ({
+    division,
+    canManage: !!onDeleteDivision && canManageDivision(user ?? null, division),
+    view: getDivisionView(division),
+    workspace: user?.organizations.find(m => m.organizationId === division.organizationId),
+  }));
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center p-4">
@@ -122,20 +130,25 @@ export const DivisionSelector = ({
             Little League Draft
           </h1>
           <p className="text-gray-600 dark:text-gray-400">
-            Select a division to continue or create a new one
+            Select a division to continue
           </p>
         </div>
 
         {/* Create New Division Button */}
-        <button
+        {onCreateNew && <button
           onClick={onCreateNew}
           className="w-full mb-6 p-6 border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors flex items-center justify-center gap-3 group"
         >
           <Plus className="w-8 h-8 text-gray-400 group-hover:text-blue-500 transition-colors" />
-          <span className="text-xl font-semibold text-gray-700 dark:text-gray-300 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-            Create New Division
+          <span className="text-left">
+            <span className="block text-xl font-semibold text-gray-700 dark:text-gray-300 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+              {creationLeagueName ? 'Create New Division' : 'Create Personal Division'}
+            </span>
+            <span className="block text-sm text-gray-600 dark:text-gray-400">
+              {creationLeagueName ? `Shared with ${creationLeagueName}` : 'Not shared with a league'}
+            </span>
           </span>
-        </button>
+        </button>}
 
         {/* Division List */}
         {sortedDivisions.length > 0 && (
@@ -144,9 +157,10 @@ export const DivisionSelector = ({
               Existing Divisions
             </h2>
 
-            {sortedDivisions.map((division) => (
-              <div
+            {sortedDivisions.map(({ division, canManage, view, workspace }) => (
+              <article
                 key={division.id}
+                aria-label={division.name}
                 className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden"
               >
                 <div className="p-5">
@@ -162,6 +176,10 @@ export const DivisionSelector = ({
                       </div>
 
                       <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
+                        <span>
+                          {workspace?.organizationName ?? (division.organizationId ? 'League division' : 'Personal division')}
+                          {!canManage && ' · Read-only'}
+                        </span>
                         <span className="flex items-center gap-1.5">
                           <Users className="w-4 h-4" />
                           {division.teamCount} teams
@@ -178,13 +196,13 @@ export const DivisionSelector = ({
 
                     {/* Action Buttons */}
                     <div className="flex items-center gap-2 ml-4">
-                      {division.phase === 'complete' ? (
+                      {!canManage || division.phase === 'complete' ? (
                         <button
                           onClick={() => onSelectDivision(division.id)}
                           className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
                         >
                           <Eye className="w-4 h-4" />
-                          View Results
+                          {canManage ? 'View Results' : view === 'rosters' ? 'View Rosters' : view === 'draft' ? 'View Draft' : 'View Division'}
                         </button>
                       ) : (
                         <button
@@ -196,7 +214,7 @@ export const DivisionSelector = ({
                         </button>
                       )}
 
-                      <button
+                      {canManage && <button
                         onClick={() => handleDelete(division.id)}
                         className={`p-2 rounded-lg transition-colors ${
                           deleteConfirm === division.id
@@ -206,13 +224,13 @@ export const DivisionSelector = ({
                         title={deleteConfirm === division.id ? 'Click again to confirm' : 'Delete division'}
                       >
                         <Trash2 className="w-4 h-4" />
-                      </button>
+                      </button>}
                     </div>
                   </div>
                 </div>
 
                 {/* Delete Confirmation */}
-                {deleteConfirm === division.id && (
+                {canManage && deleteConfirm === division.id && (
                   <div className="px-5 pb-4">
                     <div className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
                       <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400 flex-shrink-0" />
@@ -228,7 +246,7 @@ export const DivisionSelector = ({
                     </div>
                   </div>
                 )}
-              </div>
+              </article>
             ))}
           </div>
         )}
@@ -240,7 +258,7 @@ export const DivisionSelector = ({
               <Users className="w-16 h-16 mx-auto" />
             </div>
             <p className="text-gray-500 dark:text-gray-500">
-              No divisions yet. Create one to get started!
+              {onCreateNew ? 'No divisions yet. Create one to get started.' : 'No divisions to view yet.'}
             </p>
           </div>
         )}
