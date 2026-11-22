@@ -14,6 +14,7 @@
     "test:e2e:headed": "playwright test --headed"
   },
   "dependencies": {
+    "@elevenlabs/react": "1.23.1",
     "@hookform/resolvers": "^5.2.2",
     "@sentry/react": "^10.78.0",
     "lucide-react": "^0.294.0",

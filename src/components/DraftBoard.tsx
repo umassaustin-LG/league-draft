@@ -14,6 +14,7 @@ import { DraftState, Team, DivisionAgeRange, Player, PickWarning, DraftPick } fr
 import { getPickWarnings } from '../utils/draftSafety';
 import { getNextPick, calculateDraftOrder } from '../utils/draftOrder';
 import { useViewMode } from '../contexts/ViewContext';
+import { VoiceCopilot } from './draft/VoiceCopilot';
 import { getTeamDisplayName } from '../utils/teamUtils';
 import { DraftBoardPlayerGrid } from './draft/DraftBoardPlayerGrid';
 import { DraftBoardRosterView } from './draft/DraftBoardRosterView';
@@ -44,6 +45,8 @@ interface DraftBoardProps {
   // Mandatory pick error modal
   mandatoryPickError?: string | null;
   onClearMandatoryPickError?: () => void;
+  // Set only when the signed-in user is a league admin for this division
+  voiceCopilotDivisionId?: string;
 }
 
 // All scoreboard Zone-2 confirmations flow through a single state.
@@ -68,6 +71,7 @@ export const DraftBoard = ({
   isLoading = false,
   mandatoryPickError,
   onClearMandatoryPickError,
+  voiceCopilotDivisionId,
 }: DraftBoardProps) => {
   const viewMode = useViewMode();
   const isPublicView = viewMode === 'public';
@@ -589,6 +593,15 @@ export const DraftBoard = ({
             })}
           </div>
         </div>
+
+        {voiceCopilotDivisionId && !isPublicView && (
+          <VoiceCopilot
+            draftState={draftState}
+            divisionId={voiceCopilotDivisionId}
+            screen={drawerMode}
+            rules={{ enforceAgeLimit, maxPerAge }}
+          />
+        )}
 
         {/* Drawer toggle */}
         <div className="flex items-center justify-between bg-surface border border-rule rounded-sharp px-3 py-2 mb-4">

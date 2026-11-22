@@ -9,6 +9,7 @@ from .views.draft import draft_readiness_view, draft_pick_check
 
 
 from .views.elevenlabs import elevenlabs_token, elevenlabs_status, elevenlabs_speak
+from .views.voice_copilot import voice_copilot_token
 
 from .views import (
     # Auth
@@ -93,6 +94,7 @@ urlpatterns = [
     path("api/divisions/", divisions_list_create, name="divisions-list-create"),
     path("api/divisions/<uuid:pk>/", division_detail, name="division-detail"),
     path("api/divisions/<uuid:pk>/reset/", division_reset, name="division-reset"),
+    path("api/divisions/<uuid:pk>/voice-copilot/token/", voice_copilot_token, name="voice-copilot-token"),
 
     # Teams
     path("api/teams/", teams_list_create, name="teams-list-create"),

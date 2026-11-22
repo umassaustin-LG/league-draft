@@ -294,6 +294,80 @@ class AnnouncerTests(TestCase):
         self.assertEqual(client.post("/api/elevenlabs/speak/", {}, content_type="application/json").status_code, 403)
 
 
+@override_settings(ELEVENLABS_API_KEY="test-key")
+class VoiceCopilotTokenTests(TestCase):
+    def setUp(self):
+        self.org = Organization.objects.create(name="Voice LL", slug="voice-ll")
+        self.other_org = Organization.objects.create(name="Other LL", slug="other-ll")
+        self.admin = User.objects.create_user(email="admin@voice.example", password="test-password")
+        self.coach = User.objects.create_user(email="coach@voice.example", password="test-password")
+        self.viewer = User.objects.create_user(email="viewer@voice.example", password="test-password")
+        self.outsider = User.objects.create_user(email="outsider@voice.example", password="test-password")
+        OrganizationMembership.objects.create(user=self.admin, organization=self.org, role="admin")
+        OrganizationMembership.objects.create(user=self.coach, organization=self.org, role="coach")
+        OrganizationMembership.objects.create(user=self.viewer, organization=self.org, role="viewer")
+        OrganizationMembership.objects.create(user=self.outsider, organization=self.other_org, role="admin")
+        fields = dict(preset="majors", age_range_min=10, age_range_max=12, team_count=4)
+        self.division = Division.objects.create(organization=self.org, name="Majors", **fields)
+        self.personal = Division.objects.create(owner=self.outsider, name="Personal", **fields)
+        self.url = reverse("voice-copilot-token", args=[self.division.id])
+
+    def post_as(self, user, url=None):
+        self.client.force_login(user)
+        return self.client.post(url or self.url)
+
+    @mock.patch("draft.elevenlabs_client.ElevenLabs")
+    def test_league_admin_gets_single_use_token(self, sdk):
+        sdk.return_value.tokens.single_use.create.return_value.token = "scribe-token"
+        response = self.post_as(self.admin)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"token": "scribe-token"})
+        self.assertIn("no-store", response["Cache-Control"])
+        sdk.return_value.tokens.single_use.create.assert_called_once_with(token_type="realtime_scribe")
+
+    @mock.patch("draft.views.voice_copilot.get_elevenlabs_client")
+    def test_coach_and_viewer_are_forbidden(self, get_client):
+        for user in (self.coach, self.viewer):
+            response = self.post_as(user)
+            self.assertEqual(response.status_code, 403)
+        get_client.assert_not_called()
+
+    @mock.patch("draft.views.voice_copilot.get_elevenlabs_client")
+    def test_admin_of_another_league_gets_not_found(self, get_client):
+        self.assertEqual(self.post_as(self.outsider).status_code, 404)
+        get_client.assert_not_called()
+
+    @mock.patch("draft.elevenlabs_client.ElevenLabs")
+    def test_personal_division_only_for_its_owner(self, sdk):
+        sdk.return_value.tokens.single_use.create.return_value.token = "scribe-token"
+        url = reverse("voice-copilot-token", args=[self.personal.id])
+        self.assertEqual(self.post_as(self.admin, url).status_code, 404)
+        self.assertEqual(self.post_as(self.outsider, url).status_code, 200)
+
+    @mock.patch("draft.views.voice_copilot.get_elevenlabs_client")
+    def test_unknown_division_and_anonymous(self, get_client):
+        url = reverse("voice-copilot-token", args=["00000000-0000-0000-0000-000000000000"])
+        self.assertEqual(self.post_as(self.admin, url).status_code, 404)
+        self.client.logout()
+        self.assertEqual(self.client.post(self.url).status_code, 401)
+        get_client.assert_not_called()
+
+    @override_settings(ELEVENLABS_API_KEY="")
+    def test_unconfigured_returns_503(self):
+        self.assertEqual(self.post_as(self.admin).status_code, 503)
+
+    @mock.patch("draft.elevenlabs_client.ElevenLabs")
+    def test_upstream_error_is_sanitized(self, sdk):
+        sdk.return_value.tokens.single_use.create.side_effect = ApiError(status_code=401, body="provider details")
+        response = self.post_as(self.admin)
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.json(), {"error": "Unable to create ElevenLabs token"})
+
+    @mock.patch("draft.views.voice_copilot.get_elevenlabs_client")
+    def test_get_not_allowed(self, get_client):
+        self.client.force_login(self.admin)
+        self.assertEqual(self.client.get(self.url).status_code, 405)
+        get_client.assert_not_called()
 class GetClientIpTests(TestCase):
     def setUp(self):
         self.factory = RequestFactory()

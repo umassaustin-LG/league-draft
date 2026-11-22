@@ -14,6 +14,15 @@ organization context (use `X-Organization-ID` when needed); master admins do not
 Missing configuration
 returns 503; upstream failures return a generic 502 without provider details.
 
+The draft board's voice copilot uses `POST /api/divisions/<id>/voice-copilot/token/`
+instead. It returns the same kind of token, but only to users who can manage that
+division (league admins, master admins, or the owner of a personal division).
+Coaches and viewers get 403, and users outside the league get 404. The copilot is
+read-only: it answers questions about the live draft from the board's state (who is
+on the clock, the next eligible player, why a player is blocked, team rosters, and
+draft progress). It never drafts, skips, undoes or trades, and it turns those
+requests away. Answers are read aloud with the browser's speech synthesis.
+
 # Little League Draft Application
 
 A comprehensive draft management system for Little League baseball divisions. Streamlines the entire draft process from player evaluation import through final team roster generation, with advanced features for handling coach's kids, siblings, and multiple draft formats.
