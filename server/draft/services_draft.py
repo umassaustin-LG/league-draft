@@ -146,10 +146,11 @@ class DraftService:
         cls._lock_sibling_chain(player, team)
         pick.locked_sibling_ids = [str(p.id) for p in division.players.filter(locked_to_team=team).exclude(id__in=previously_locked)]
         pick.save(update_fields=["locked_sibling_ids"])
+        overridden_warnings = [w for w in warnings if w["level"] == "block"] if acknowledge_warnings else []
         DraftAuditEvent.objects.create(
             draft_state=draft_state, action="pick", round=pick.round, pick=pick.pick,
             team_id=team.id, player_id=player.id, actor=actor,
-            details={"overridden_warnings": warnings} if acknowledge_warnings and warnings else {},
+            details={"overridden_warnings": overridden_warnings} if overridden_warnings else {},
         )
 
         # Advance to next pick

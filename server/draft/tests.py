@@ -1030,6 +1030,21 @@ class DraftSafetyTests(CrossTenantTestBase):
         response = self.client.post("/api/draft/pick-check/", data=json.dumps({"draft_state_id": str(self.state.id), "player_id": str(self.players[3].id), "team_id": str(self.state.current_team_id)}), content_type="application/json")
         self.assertEqual(response.status_code, 403)
 
+    def test_acknowledged_warn_only_pick_is_not_an_override(self):
+        from .services_readiness import evaluate_pick
+        self.division.max_per_age = 1
+        self.division.save()
+        self.state.refresh_from_db()
+        warnings = evaluate_pick(self.state, self.players[0], self.state.current_team)
+        self.assertTrue(warnings)
+        self.assertTrue(all(w["level"] == "warn" for w in warnings))
+        self.state = DraftService.draft_player(
+            self.state.id, self.players[0].id, self.state.current_team_id,
+            acknowledge_warnings=True,
+        )
+        event = self.state.audit_events.filter(action="pick").last()
+        self.assertNotIn("overridden_warnings", event.details)
+
     def test_sibling_warning_and_roster_balance(self):
         from .services_readiness import evaluate_pick
         self.players[0].sibling_id = self.players[1].id
