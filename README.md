@@ -5,11 +5,13 @@ optional and must never be exposed through a `VITE_` variable. For Docker Compos
 export it in the shell or use `docker compose --env-file .env.local up -d`.
 In Kubernetes, replace the empty environment entry with a Secret reference.
 
-Authenticated clients can POST `/api/elevenlabs/token/` with the normal session
+Organization/league admins and master admins can POST `/api/elevenlabs/token/` with the normal session
 cookie and CSRF header (no body required). It returns `{"token": "..."}`, a
 time-limited, single-use `realtime_scribe` credential, not the API key. Tokens are
 not cached; issuance is limited to 10 requests/minute per client IP. This endpoint
-is user-scoped and does not require an active organization. Missing configuration
+is admin-only: coaches/viewers receive 403. Organization admins need an active
+organization context (use `X-Organization-ID` when needed); master admins do not.
+Missing configuration
 returns 503; upstream failures return a generic 502 without provider details.
 
 # Little League Draft Application

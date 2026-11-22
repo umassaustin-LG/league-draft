@@ -30,7 +30,12 @@ from .views.helpers import RateLimiter, get_client_ip
 class ElevenLabsTokenTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(email="voice@example.com", password="test-password")
+        self.organization = Organization.objects.create(name="Voice League", slug="voice-league")
+        self.membership = OrganizationMembership.objects.create(
+            user=self.user, organization=self.organization, role="admin"
+        )
         self.client.force_login(self.user)
+        self.client.defaults["HTTP_X_ORGANIZATION_ID"] = str(self.organization.id)
         self.url = reverse("elevenlabs-token")
 
     @mock.patch("draft.elevenlabs_client.ElevenLabs")
@@ -58,6 +63,39 @@ class ElevenLabsTokenTests(TestCase):
         self.client.logout()
         self.assertEqual(self.client.post(self.url).status_code, 401)
         get_client.assert_not_called()
+
+    @override_settings(ELEVENLABS_API_KEY="test-key")
+    @mock.patch("draft.elevenlabs_client.ElevenLabs")
+    def test_non_admin_members_rejected_without_sdk_call(self, sdk):
+        for role in ("coach", "viewer"):
+            with self.subTest(role=role):
+                self.membership.role = role
+                self.membership.save(update_fields=["role"])
+                response = self.client.post(self.url)
+                self.assertEqual(response.status_code, 403)
+                sdk.assert_not_called()
+
+    @override_settings(ELEVENLABS_API_KEY="test-key")
+    @mock.patch("draft.elevenlabs_client.ElevenLabs")
+    def test_master_admin_succeeds_without_organization(self, sdk):
+        self.user.role = "master_admin"
+        self.user.save(update_fields=["role"])
+        self.membership.delete()
+        del self.client.defaults["HTTP_X_ORGANIZATION_ID"]
+        sdk.return_value.tokens.single_use.create.return_value.token = "master-token"
+        response = self.client.post(self.url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"token": "master-token"})
+        sdk.return_value.tokens.single_use.create.assert_called_once_with(
+            token_type="realtime_scribe", request_options={"max_retries": 0}
+        )
+
+    @mock.patch("draft.elevenlabs_client.ElevenLabs")
+    def test_missing_organization_rejected_without_sdk_call(self, sdk):
+        self.membership.delete()
+        del self.client.defaults["HTTP_X_ORGANIZATION_ID"]
+        self.assertEqual(self.client.post(self.url).status_code, 400)
+        sdk.assert_not_called()
 
     @override_settings(ELEVENLABS_API_KEY="test-key")
     @mock.patch("draft.elevenlabs_client.ElevenLabs")
