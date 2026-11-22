@@ -271,11 +271,11 @@ export function answerVoiceQuery(
 
     case 'mandatory-pick': {
       if (draftOver) return reply('The draft is complete.');
+      const target = state.teams.find((t) => t.id === query.teamId) ?? team;
       const mandatory = state.mandatoryPick && state.players.find((p) => p.id === state.mandatoryPick?.playerId);
-      if (mandatory) {
+      if (mandatory && target.id === team.id) {
         return reply(`${teamName} must take ${mandatory.name} this pick (${mandatoryReason(state)}).`, { playerId: mandatory.id, teamId: team.id });
       }
-      const target = state.teams.find((t) => t.id === query.teamId) ?? team;
       const reserved = state.players
         .filter((p) => !p.isDrafted && ((p.isCoachKid && p.coachTeamId === target.id) || p.lockedToTeamId === target.id))
         .map((p) => `${p.name} in round ${p.lockedToRound ?? p.projectedRound}`);

@@ -124,6 +124,14 @@ describe('answers', () => {
     );
   });
 
+  it('answers mandatory questions for the team that was named', () => {
+    const state = buildState({ mandatoryPick: { playerId: 'p1', reason: 'sibling', siblingName: 'Mia Chen' } });
+    expect(ask('any mandatory picks for Rivera', state).text).toBe(
+      'No mandatory pick for Rivera right now. Still reserved for them: Ava Stone in round 2 and Leo Park in round 1.'
+    );
+    expect(ask('any mandatory picks', state).text).toBe('Bonacorsi must take Mason Lee this pick (sibling of Mia Chen).');
+  });
+
   it('flags the age cap when it is enforced', () => {
     const state = buildState();
     state.teams[0].ageBreakdown = { '11': 3 };
