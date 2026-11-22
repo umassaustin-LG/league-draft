@@ -32,12 +32,17 @@ export function scrubString(value: string): string {
 }
 
 export function scrubStrings<T>(value: T): T {
-  if (typeof value === 'string') return scrubString(value) as T;
-  if (Array.isArray(value)) return value.map(item => scrubStrings(item)) as T;
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, scrubStrings(item)])) as T;
+  function visit(item: unknown, snapshot = false): unknown {
+    if (typeof item === 'string') return snapshot ? item : scrubString(item);
+    if (Array.isArray(item)) return item.map(entry => visit(entry, snapshot));
+    if (!item || typeof item !== 'object') return item;
+    const prototype = Object.getPrototypeOf(item);
+    if (prototype !== Object.prototype && prototype !== null) return item;
+    const record = item as Record<string, unknown>;
+    if (snapshot && ('cv' in record || typeof record.data === 'string')) return item;
+    return Object.fromEntries(Object.entries(record).map(([key, entry]) => [key, visit(entry, key === '$snapshot_data')]));
   }
-  return value;
+  return visit(value) as T;
 }
 
 export function scrub<T>(value: T, posthog = false): T {

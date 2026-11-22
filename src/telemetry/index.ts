@@ -37,6 +37,7 @@ export function initTelemetry(): void {
       capture_performance: false,
       capture_exceptions: false,
       session_recording: {
+        compress_events: false,
         maskAllInputs: true,
         maskTextSelector: '*',
         recordHeaders: false,
