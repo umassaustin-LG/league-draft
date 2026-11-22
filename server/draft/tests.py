@@ -264,6 +264,7 @@ class AnnouncerTests(TestCase):
         self.assertEqual(response["Content-Type"], "audio/mpeg")
         self.assertIn("no-store", response["Cache-Control"])
         self.assertEqual(upstream.return_value.text_to_speech.convert.call_args.kwargs["model_id"], "eleven_flash_v2_5")
+        self.assertEqual(upstream.return_value.text_to_speech.convert.call_args.kwargs["request_options"], {"max_retries": 0})
 
     @mock.patch("draft.elevenlabs_client.ElevenLabs")
     def test_upstream_failure(self, upstream):

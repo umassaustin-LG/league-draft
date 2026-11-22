@@ -58,6 +58,7 @@ def elevenlabs_speak(request):
             text=text,
             model_id="eleven_flash_v2_5",
             output_format="mp3_44100_128",
+            request_options={"max_retries": 0},
         ))
     except (ApiError, HTTPError):
         return json_response({"error": "Announcer unavailable"}, status=502)
