@@ -22,7 +22,9 @@ def elevenlabs_token(request):
         return json_response({"error": "ElevenLabs is not configured"}, status=503)
 
     try:
-        result = client.tokens.single_use.create(token_type="realtime_scribe")
+        result = client.tokens.single_use.create(
+            token_type="realtime_scribe", request_options={"max_retries": 0}
+        )
     except (ApiError, HTTPError):
         return json_response({"error": "Unable to create ElevenLabs token"}, status=502)
     return json_response({"token": result.token})
