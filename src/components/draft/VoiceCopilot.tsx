@@ -119,7 +119,10 @@ export const VoiceCopilot = ({ draftState, divisionId, screen, rules }: VoiceCop
     [draftState, screen, rules]
   );
 
-  const error = startError ?? (scribe.isConnected ? null : scribe.error);
+  const scribeError = scribe.isConnected ? null : scribe.error;
+  const error = startError ?? (scribeError && /device not found|notfound/i.test(scribeError)
+    ? 'No microphone found. Connect one, or type a question.'
+    : scribeError);
 
   return (
     <section

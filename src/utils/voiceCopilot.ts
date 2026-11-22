@@ -232,7 +232,7 @@ export function answerVoiceQuery(
 
     case 'roster-change':
       return reply(
-        "I can't change rosters by voice. Use the board's buttons for picks, skips, undo and trades so each one is confirmed."
+        "I can't change rosters. Use the board's buttons for picks, skips, undo and trades so each one is confirmed."
       );
 
     case 'current-pick': {

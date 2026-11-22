@@ -141,7 +141,7 @@ describe('answers', () => {
   });
 
   it('refuses roster changes', () => {
-    expect(ask('draft Mason Lee').text).toContain("can't change rosters by voice");
+    expect(ask('draft Mason Lee').text).toContain("can't change rosters");
   });
 
   it('reads rosters and progress', () => {
