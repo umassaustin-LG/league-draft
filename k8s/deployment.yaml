@@ -20,6 +20,18 @@ spec:
           ports:
             - containerPort: 8000
           env:
+            - name: SENTRY_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: league-draft-secrets
+                  key: sentry-dsn
+                  optional: true
+            - name: SENTRY_ENVIRONMENT
+              valueFrom:
+                configMapKeyRef:
+                  name: league-draft-config
+                  key: sentry-environment
+                  optional: true
             - name: DEBUG
               value: "False"
             - name: ELEVENLABS_API_KEY

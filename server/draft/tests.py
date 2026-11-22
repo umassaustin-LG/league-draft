@@ -25,6 +25,35 @@ from .models import (
 )
 from .services import DraftService
 from .views.helpers import RateLimiter, get_client_ip
+from league_draft.telemetry import before_send, scrub
+
+
+class TelemetryScrubberTests(TestCase):
+    def test_nested_sensitive_properties(self):
+        event = {'extra': {'firstName': 'Alice', 'players': ['Alice'], 'safe': 42}}
+        self.assertEqual(scrub(event), {
+            'extra': {'firstName': '[REDACTED]', 'players': '[REDACTED]', 'safe': 42},
+        })
+        self.assertEqual(event['extra']['firstName'], 'Alice')
+
+    def test_error_strings_and_requests(self):
+        event = {
+            'exception': {'values': [{'value': 'Contact a@example.com or +1 (212) 555-1234'}]},
+            'request': {'url': 'https://example.com/draft?secret=value#email',
+                        'data': {'private': 'body'}, 'cookies': 'session',
+                        'headers': {'Authorization': 'secret'}, 'query_string': 'private'},
+            'user': {'id': 'opaque-id', 'email': 'a@example.com', 'ip_address': '1.2.3.4'},
+        }
+        clean = before_send(event, {})
+        self.assertEqual(clean['exception']['values'][0]['value'], 'Contact [REDACTED] or [REDACTED]')
+        self.assertEqual(clean['request'], {'url': 'https://example.com/draft'})
+        self.assertEqual(clean['user'], {'id': 'opaque-id'})
+
+    def test_empty_and_breadcrumb(self):
+        self.assertEqual(scrub({}), {})
+        self.assertIsNone(scrub(None))
+        self.assertEqual(before_send({'message': 'private', 'data': {'body': 'secret'}}, {}),
+                         {'message': '[REDACTED]'})
 
 
 @override_settings(ELEVENLABS_API_KEY="")
