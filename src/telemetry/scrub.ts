@@ -8,9 +8,26 @@ function isSensitiveKey(key: string): boolean {
 const dropped = /^(data|body|request_body|cookies|headers|query_string|queryString|search)$/i;
 const email = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
 const phone = /(?<!\w)\+?\d[\d ().-]{7,}\d(?!\w)/g;
+const secretRoute = /^(join|join-link|reset|reset-password|password-reset|invite|invites|invitation|invitations|accept|token|confirm)$/i;
+const secretSegment = /(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[A-Za-z0-9_-]{20,})/i;
+
+function scrubUrlPaths(value: string): string {
+  return value.replace(/https?:\/\/[^\s"'<>]+|\/[^\s"'<>]*/gi, url => {
+    const origin = url.match(/^https?:\/\/[^/?#]+/i)?.[0] || '';
+    let privatePath = false;
+    const path = url.slice(origin.length).split(/[?#]/, 1)[0];
+    return origin + path.split('/').map(segment => {
+      let decoded = segment;
+      try { decoded = decodeURIComponent(segment); } catch { /* Keep malformed URL segments. */ }
+      const redact = privatePath || secretSegment.test(decoded);
+      if (secretRoute.test(decoded)) privatePath = true;
+      return segment && redact ? '[REDACTED]' : segment;
+    }).join('/');
+  });
+}
 
 export function scrubString(value: string): string {
-  return value.replace(/(https?:\/\/[^\s?#]+|\/[^\s?#]*)[?#][^\s]*/gi, '$1')
+  return scrubUrlPaths(value)
     .replace(email, '[REDACTED]').replace(phone, '[REDACTED]');
 }
 

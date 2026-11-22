@@ -1,6 +1,7 @@
 """Privacy filtering shared by Sentry event, transaction and breadcrumb hooks."""
 
 import re
+from urllib.parse import unquote
 
 SENSITIVE = set((
     'name names email emails phone phones address addresses player players roster rosters '
@@ -12,6 +13,28 @@ DROPPED = re.compile(r"^(data|body|request_body|cookies|headers|query_string|que
 EMAIL = re.compile(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", re.I)
 PHONE = re.compile(r"(?<!\w)\+?\d[\d ().-]{7,}\d(?!\w)")
 URL_QUERY = re.compile(r"(https?://[^\s?#]+|/[^\s?#]*)[?#][^\s]*", re.I)
+SECRET_ROUTE = re.compile(r'^(join|join-link|reset|reset-password|password-reset|invite|invites|invitation|invitations|accept|token|confirm)$', re.I)
+SECRET_SEGMENT = re.compile(r'(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[A-Za-z0-9_-]{20,})', re.I)
+
+
+def scrub_string(value):
+    def scrub_url(match):
+        url = match.group()
+        origin_match = re.match(r'^https?://[^/?#]+', url, re.I)
+        origin = origin_match.group() if origin_match else ''
+        path = re.split(r'[?#]', url[len(origin):], maxsplit=1)[0]
+        private_path = False
+        segments = []
+        for segment in path.split('/'):
+            decoded = unquote(segment)
+            redact = private_path or SECRET_SEGMENT.search(decoded)
+            if SECRET_ROUTE.fullmatch(decoded):
+                private_path = True
+            segments.append('[REDACTED]' if segment and redact else segment)
+        return origin + '/'.join(segments)
+
+    value = re.sub(r'https?://[^\s"\'<>]+|/[^\s"\'<>]*', scrub_url, value, flags=re.I)
+    return PHONE.sub('[REDACTED]', EMAIL.sub('[REDACTED]', value))
 
 
 def is_sensitive_key(key):
@@ -22,7 +45,7 @@ def is_sensitive_key(key):
 
 def scrub(value, posthog=False):
     if isinstance(value, str):
-        return PHONE.sub('[REDACTED]', EMAIL.sub('[REDACTED]', URL_QUERY.sub(r'\1', value)))
+        return scrub_string(value)
     if isinstance(value, (list, tuple)):
         return [scrub(item, posthog) for item in value]
     if isinstance(value, dict):

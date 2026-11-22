@@ -29,6 +29,18 @@ from league_draft.telemetry import before_send, scrub
 
 
 class TelemetryScrubberTests(TestCase):
+    def test_url_path_secrets(self):
+        for path in ('/join/short', '/api/leagues/join/short', '/reset/uid/short',
+                     '/reset-password/uid/short', '/invite/short', '/invitation/short',
+                     '/accept/short', '/token/short', '/confirm/short'):
+            clean = scrub({'url': 'https://example.com' + path + '?private=yes'})['url']
+            self.assertNotIn('short', clean)
+            self.assertNotIn('private=yes', clean)
+        for secret in ('12345678-1234-1234-1234-123456789abc', 'abcdefghijklmnopqrst', '%61' * 20):
+            self.assertEqual(scrub('/draft/' + secret), '/draft/[REDACTED]')
+        self.assertEqual(scrub('/draft/players'), '/draft/players')
+        self.assertEqual(scrub('/reset-password?uid=abc&token=secret'), '/reset-password')
+
     def test_nested_sensitive_properties(self):
         event = {'extra': {'firstName': 'Alice', 'players': ['Alice'], 'safe': 42}}
         self.assertEqual(scrub(event), {
