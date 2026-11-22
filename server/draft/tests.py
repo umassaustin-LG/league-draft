@@ -1035,7 +1035,7 @@ class DraftSafetyTests(CrossTenantTestBase):
         self.players[0].sibling_id = self.players[1].id
         self.players[0].save()
         warnings = evaluate_pick(self.state, self.players[0], self.victim_teams[0])
-        self.assertTrue(any(w["code"] == "sibling_capacity" for w in warnings))
+        self.assertTrue(any(w["code"] == "sibling_lock" for w in warnings))
         self.players[0].sibling_id = None
         self.players[0].save()
         self.players[1].total_score = 100

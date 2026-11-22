@@ -3,6 +3,10 @@ from collections import Counter
 ROSTER_BALANCE_RATIO = 1.15
 
 
+def team_display_name(team):
+    return team.name or team.head_coach or f"Team {team.draft_position}"
+
+
 class RuleCheckError(ValueError):
     def __init__(self, warnings):
         self.warnings = warnings
@@ -46,7 +50,7 @@ def draft_readiness(division):
             if p.is_coach_kid and p.coach_team_id == team.id:
                 owed.update([p.id] + [s.id for s in sibling_group(p, players)])
         if len(owed) > division.roster_size:
-            coach_errors.append(f"{team.name} has more coach kids and siblings than roster spots")
+            coach_errors.append(f"{team_display_name(team)} has more coach kids and siblings than roster spots")
     add("coach_kids", "Coach kids", coach_errors)
     sibling_errors, sibling_warnings = [], []
     for p in players:
@@ -69,6 +73,7 @@ def draft_readiness(division):
 
 def evaluate_pick(draft_state, player, team):
     division = draft_state.division
+    team_name = team_display_name(team)
     players = list(division.players.all())
     roster = [p for p in players if p.is_drafted and p.drafted_by_team_id == team.id]
     warnings = []
@@ -80,7 +85,7 @@ def evaluate_pick(draft_state, player, team):
     age_count = sum(p.little_league_age == player.little_league_age for p in roster)
     if division.enforce_age_limit and division.max_per_age > 0:
         if age_count >= division.max_per_age:
-            add("age_cap", "block", f"{team.name} already has the maximum players of age {player.little_league_age}")
+            add("age_cap", "block", f"{team_name} already has the maximum players of age {player.little_league_age}")
         elif age_count + 1 == division.max_per_age:
             add("age_cap", "warn", f"This pick reaches the age {player.little_league_age} cap")
     if not division.age_range_min <= player.little_league_age <= division.age_range_max:
@@ -89,13 +94,13 @@ def evaluate_pick(draft_state, player, team):
     owed = {p.id for p in players if not p.is_drafted and p.id != player.id and ((p.is_coach_kid and p.coach_team_id == team.id) or p.locked_to_team_id == team.id)} | {p.id for p in siblings}
     remaining = division.roster_size - draft_state.picks.filter(team_id=team.id).count() - 1
     if siblings and remaining < len(owed):
-        add("sibling_capacity", "block", f"{team.name} lacks remaining picks for mandatory players and siblings")
+        add("sibling_capacity", "block", f"{team_name} lacks remaining picks for mandatory players and siblings")
     for sibling in siblings:
-        add("sibling_capacity", "warn", f"Drafting {player.name} locks sibling {sibling.name} to {team.name} in round {sibling.locked_to_round or sibling.projected_round}")
+        add("sibling_lock", "warn", f"Drafting {player.name} locks sibling {sibling.name} to {team_name} in round {sibling.locked_to_round or sibling.projected_round}")
     drafted = [p for p in players if p.is_drafted]
     if len(roster) + 1 >= 2 and len(drafted) + 1 >= division.team_count:
         league_average = (sum(p.total_score for p in drafted) + player.total_score) / (len(drafted) + 1)
         average = (sum(p.total_score for p in roster) + player.total_score) / (len(roster) + 1)
         if average > ROSTER_BALANCE_RATIO * league_average:
-            add("roster_balance", "warn", f"{team.name}'s average score exceeds 115% of the league average")
+            add("roster_balance", "warn", f"{team_name}'s average score exceeds 115% of the league average")
     return warnings
