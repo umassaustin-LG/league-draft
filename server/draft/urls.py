@@ -6,6 +6,7 @@ Uses plain Django function-based views (no DRF).
 
 from django.urls import path
 from .views.draft import draft_readiness_view, draft_pick_check
+from .views.announcer import announcer_status, announcer_speak
 
 from .views.elevenlabs import elevenlabs_token
 
@@ -72,6 +73,8 @@ urlpatterns = [
     path("api/elevenlabs/token/", elevenlabs_token, name="elevenlabs-token"),
     path("api/draft/readiness/<uuid:division_id>/", draft_readiness_view, name="draft-readiness"),
     path("api/draft/pick-check/", draft_pick_check, name="draft-pick-check"),
+    path("api/announcer/status/", announcer_status, name="announcer-status"),
+    path("api/announcer/speak/", announcer_speak, name="announcer-speak"),
     # Health
     path("health", health_view, name="health"),
 
