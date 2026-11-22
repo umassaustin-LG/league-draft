@@ -264,7 +264,7 @@ export const DraftBoard = ({
   // Build the Zone 2 banner content from whichever state is active.
   // Falls through to On-Deck when nothing's pending.
   const zone2 = (() => {
-    if (draftState.mandatoryPick && controls) {
+    if (draftState.mandatoryPick && !pendingAction && controls) {
       return {
         label: 'Mandatory pick',
         labelIcon: <AlertCircle className="w-3 h-3" />,
