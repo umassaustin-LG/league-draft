@@ -201,7 +201,7 @@ class AnnouncerTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user("announcer@example.com", "Passw0rd!x")
         organization = Organization.objects.create(name="League", slug="announcer")
-        OrganizationMembership.objects.create(user=self.user, organization=organization)
+        OrganizationMembership.objects.create(user=self.user, organization=organization, role="admin")
         self.client.force_login(self.user)
 
     def speak(self, data=None):
@@ -216,7 +216,39 @@ class AnnouncerTests(TestCase):
 
     def test_auth_required(self):
         self.client.logout()
+        self.assertEqual(self.client.get("/api/elevenlabs/status/").json(), {"enabled": False})
         self.assertEqual(self.speak().status_code, 401)
+
+    @mock.patch("draft.elevenlabs_client.ElevenLabs")
+    def test_non_admins_cannot_announce(self, sdk):
+        for role in ("coach", "viewer"):
+            self.user.memberships.update(role=role)
+            self.assertEqual(self.client.get("/api/elevenlabs/status/").json(), {"enabled": False})
+            self.assertEqual(self.speak().status_code, 403)
+        sdk.assert_not_called()
+
+    @mock.patch("draft.elevenlabs_client.ElevenLabs")
+    def test_master_admin_without_membership_can_announce(self, sdk):
+        self.user.memberships.all().delete()
+        self.user.role = "master_admin"
+        self.user.save()
+        sdk.return_value.text_to_speech.convert.return_value = [b"audio"]
+        self.assertEqual(self.client.get("/api/elevenlabs/status/").json(), {"enabled": True})
+        self.assertEqual(self.speak().content, b"audio")
+        sdk.return_value.text_to_speech.convert.assert_called_once()
+
+    @mock.patch("draft.elevenlabs_client.ElevenLabs")
+    def test_active_tenant_takes_precedence_over_other_admin_membership(self, sdk):
+        other = Organization.objects.create(name="Other", slug="announcer-other")
+        OrganizationMembership.objects.create(user=self.user, organization=other, role="coach")
+        headers = {"HTTP_X_ORGANIZATION_ID": str(other.id)}
+        self.assertEqual(self.client.get("/api/elevenlabs/status/", **headers).json(), {"enabled": False})
+        self.assertEqual(self.client.post("/api/elevenlabs/speak/",
+            {"text": "Announcement"}, content_type="application/json", **headers).status_code, 403)
+        sdk.assert_not_called()
+        sdk.return_value.text_to_speech.convert.return_value = [b"audio"]
+        self.assertEqual(self.client.get("/api/elevenlabs/status/").json(), {"enabled": True})
+        self.assertEqual(self.speak().status_code, 200)
 
     def test_membership_required(self):
         self.user.memberships.all().delete()

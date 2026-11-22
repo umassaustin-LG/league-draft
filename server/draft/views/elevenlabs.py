@@ -9,7 +9,6 @@ from elevenlabs.core.api_error import ApiError
 from httpx import HTTPError
 
 from ..elevenlabs_client import get_elevenlabs_client
-from ..models import OrganizationMembership
 from .helpers import RateLimiter, json_response, rate_limit, require_auth, require_org_admin
 
 
@@ -17,10 +16,22 @@ token_limiter = RateLimiter("elevenlabs_token", "10/minute")
 speech_limiter = RateLimiter("elevenlabs_speech", "30/minute")
 
 
+def _can_announce(request):
+    user = request.user
+    if not user.is_authenticated:
+        return False
+    if user.role == "master_admin":
+        return True
+    organization = getattr(request, "organization", None) or getattr(request, "league", None)
+    if organization is not None:
+        return bool(user.is_org_admin(organization))
+    return user.memberships.filter(role="admin").exists()
+
+
 @require_http_methods(["GET"])
 @never_cache
 def elevenlabs_status(request):
-    return json_response({"enabled": bool(settings.ELEVENLABS_API_KEY)})
+    return json_response({"enabled": bool(settings.ELEVENLABS_API_KEY) and _can_announce(request)})
 
 
 @require_http_methods(["POST"])
@@ -29,8 +40,8 @@ def elevenlabs_status(request):
 @require_auth
 @rate_limit(speech_limiter)
 def elevenlabs_speak(request):
-    if not OrganizationMembership.objects.filter(user=request.user).exists():
-        return json_response({"error": "League membership required"}, status=403)
+    if not _can_announce(request):
+        return json_response({"error": "League admin required"}, status=403)
     client = get_elevenlabs_client()
     if client is None:
         return json_response({"error": "Announcer unavailable"}, status=503)
