@@ -108,7 +108,7 @@ function getDefaultOptions(method: string = 'GET'): RequestInit {
 }
 
 export async function getAnnouncerStatus(signal?: AbortSignal): Promise<{ enabled: boolean }> {
-  const response = await fetch(`${API_BASE_URL}/announcer/status/`, {
+  const response = await fetch(`${API_BASE_URL}/elevenlabs/status/`, {
     ...getDefaultOptions(), signal,
   });
   if (!response.ok) throw new Error('Announcer unavailable');
@@ -116,7 +116,7 @@ export async function getAnnouncerStatus(signal?: AbortSignal): Promise<{ enable
 }
 
 export async function speakAnnouncement(text: string, signal: AbortSignal): Promise<Blob> {
-  const response = await fetch(`${API_BASE_URL}/announcer/speak/`, {
+  const response = await fetch(`${API_BASE_URL}/elevenlabs/speak/`, {
     ...getDefaultOptions('POST'), method: 'POST', body: JSON.stringify({ text }), signal,
   });
   if (!response.ok) throw new Error('Announcer unavailable');

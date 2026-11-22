@@ -196,24 +196,22 @@ class ElevenLabsTokenTests(TestCase):
         get_client.assert_not_called()
 
 
+@override_settings(ELEVENLABS_API_KEY="test-key")
 class AnnouncerTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user("announcer@example.com", "Passw0rd!x")
         organization = Organization.objects.create(name="League", slug="announcer")
         OrganizationMembership.objects.create(user=self.user, organization=organization)
         self.client.force_login(self.user)
-        patcher = mock.patch.dict("os.environ", {"ELEVENLABS_API_KEY": "test-key"})
-        patcher.start()
-        self.addCleanup(patcher.stop)
 
     def speak(self, data=None):
-        return self.client.post("/api/announcer/speak/", data=json.dumps(
+        return self.client.post("/api/elevenlabs/speak/", data=json.dumps(
             {"text": "With pick 12, the Tigers select Ava Garcia."} if data is None else data
         ), content_type="application/json")
 
-    @mock.patch.dict("os.environ", {"ELEVENLABS_API_KEY": ""})
+    @override_settings(ELEVENLABS_API_KEY="")
     def test_not_configured(self):
-        self.assertEqual(self.client.get("/api/announcer/status/").json(), {"enabled": False})
+        self.assertEqual(self.client.get("/api/elevenlabs/status/").json(), {"enabled": False})
         self.assertEqual(self.speak().status_code, 503)
 
     def test_auth_required(self):
@@ -224,32 +222,34 @@ class AnnouncerTests(TestCase):
         self.user.memberships.all().delete()
         self.assertEqual(self.speak().status_code, 403)
 
-    @mock.patch("draft.views.announcer.urlopen")
+    @mock.patch("draft.elevenlabs_client.ElevenLabs")
     def test_success(self, upstream):
-        upstream.return_value.__enter__.return_value.read.return_value = b"audio"
-        self.assertEqual(self.client.get("/api/announcer/status/").json(), {"enabled": True})
+        upstream.return_value.text_to_speech.convert.return_value = iter([b"au", b"dio"])
+        self.assertEqual(self.client.get("/api/elevenlabs/status/").json(), {"enabled": True})
         response = self.speak()
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.content, b"audio")
         self.assertEqual(response["Content-Type"], "audio/mpeg")
-        self.assertEqual(response["Cache-Control"], "no-store")
-        request = upstream.call_args.args[0]
-        self.assertEqual(json.loads(request.data)["model_id"], "eleven_flash_v2_5")
+        self.assertIn("no-store", response["Cache-Control"])
+        self.assertEqual(upstream.return_value.text_to_speech.convert.call_args.kwargs["model_id"], "eleven_flash_v2_5")
 
-    @mock.patch("draft.views.announcer.urlopen", side_effect=OSError("private upstream detail"))
+    @mock.patch("draft.elevenlabs_client.ElevenLabs")
     def test_upstream_failure(self, upstream):
-        response = self.speak()
-        self.assertEqual(response.status_code, 502)
-        self.assertEqual(response.json(), {"error": "Announcer unavailable"})
+        for error in (ApiError(status_code=500, body="private upstream detail"), ReadTimeout("private detail")):
+            upstream.return_value.text_to_speech.convert.side_effect = error
+            response = self.speak()
+            self.assertEqual(response.status_code, 502)
+            self.assertEqual(response.json(), {"error": "Announcer unavailable"})
 
-    @mock.patch("draft.views.announcer.urlopen")
+    @mock.patch("draft.elevenlabs_client.ElevenLabs")
     def test_invalid_text(self, upstream):
         for data in ({"text": "x" * 201}, {"text": ""}, {"text": " "}, {}, [], {"text": 123}):
             self.assertEqual(self.speak(data).status_code, 400)
-        upstream.assert_not_called()
+        upstream.return_value.text_to_speech.convert.assert_not_called()
 
     def test_rate_limit(self):
-        with mock.patch("draft.views.announcer.urlopen", side_effect=OSError):
+        with mock.patch("draft.elevenlabs_client.ElevenLabs") as upstream:
+            upstream.return_value.text_to_speech.convert.side_effect = ReadTimeout("upstream")
             for _ in range(30):
                 self.speak()
         self.assertEqual(self.speak().status_code, 429)
@@ -258,7 +258,7 @@ class AnnouncerTests(TestCase):
         from django.test import Client
         client = Client(enforce_csrf_checks=True)
         client.force_login(self.user)
-        self.assertEqual(client.post("/api/announcer/speak/", {}, content_type="application/json").status_code, 403)
+        self.assertEqual(client.post("/api/elevenlabs/speak/", {}, content_type="application/json").status_code, 403)
 
 
 class GetClientIpTests(TestCase):

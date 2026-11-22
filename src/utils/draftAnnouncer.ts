@@ -17,6 +17,5 @@ export function buildAnnouncement(pick: DraftPick, teams: Team[], players: Playe
   const team = teams.find(t => t.id === pick.teamId);
   const player = players.find(p => p.id === pick.playerId);
   if (!team || !player || pick.wasSkipped) return null;
-  const overall = (pick.round - 1) * teams.length + pick.pick;
-  return `With pick ${overall}, the ${getTeamDisplayName(team)} select ${player.firstName} ${player.lastName}.`;
+  return `With pick ${pick.pick}, the ${getTeamDisplayName(team)} select ${player.firstName} ${player.lastName}.`;
 }

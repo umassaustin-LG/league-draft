@@ -44,7 +44,10 @@ export function useDraftAnnouncer(state: DraftState, mode: ViewMode) {
     const controller = new AbortController();
     let audio: HTMLAudioElement | undefined;
     let url: string | undefined;
+    let disposed = false;
     const dispose = () => {
+      if (disposed) return;
+      disposed = true;
       controller.abort();
       if (audio) {
         audio.onplaying = null;
