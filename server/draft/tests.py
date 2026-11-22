@@ -53,7 +53,32 @@ class TelemetryScrubberTests(TestCase):
         self.assertEqual(scrub({}), {})
         self.assertIsNone(scrub(None))
         self.assertEqual(before_send({'message': 'private', 'data': {'body': 'secret'}}, {}),
-                         {'message': '[REDACTED]'})
+                         {'message': 'private'})
+
+    def test_word_boundaries_and_exception_messages(self):
+        self.assertEqual(scrub({'message': 'x'}), {'message': 'x'})
+        event = {'exception': {'values': [{'message': 'Contact a@example.com or 212-555-1234'}]},
+                 'packages': 'x', 'language': 'en', 'filename': 'main.ts',
+                 'player_name': 'Alice', 'firstName': 'Alice', 'roster': ['Alice'],
+                 'coachEmail': 'a@example.com', 'teams': ['A'], 'scores': [10]}
+        clean = scrub(event)
+        self.assertEqual(clean['exception']['values'][0]['message'], 'Contact [REDACTED] or [REDACTED]')
+        for key in ('packages', 'language', 'filename'):
+            self.assertEqual(clean[key], event[key])
+        for key in ('player_name', 'firstName', 'roster', 'coachEmail', 'teams', 'scores'):
+            self.assertEqual(clean[key], '[REDACTED]')
+
+    def test_posthog_system_properties(self):
+        properties = {'token': 'phc_project', 'distinct_id': 'opaque', '$pathname': '/draft',
+                      '$os_name': 'Linux', '$current_url': 'https://example.com/?private=yes',
+                      '$email': 'a@example.com', 'coachEmail': 'a@example.com'}
+        clean = scrub(properties, posthog=True)
+        for key in ('token', 'distinct_id', '$pathname', '$os_name'):
+            self.assertEqual(clean[key], properties[key])
+        self.assertEqual(clean['$current_url'], 'https://example.com/')
+        self.assertEqual(clean['$email'], '[REDACTED]')
+        self.assertEqual(clean['coachEmail'], '[REDACTED]')
+        self.assertEqual(scrub({'token': 'private'}), {'token': '[REDACTED]'})
 
 
 @override_settings(ELEVENLABS_API_KEY="")

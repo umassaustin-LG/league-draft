@@ -15,7 +15,6 @@ export function initTelemetry(): void {
         blockAllMedia: true,
         networkDetailAllowUrls: [],
         networkCaptureBodies: false,
-        beforeAddRecordingEvent: () => null,
       })],
       replaysSessionSampleRate: 0.25,
       replaysOnErrorSampleRate: 0.25,
@@ -43,7 +42,7 @@ export function initTelemetry(): void {
         recordBody: false,
         maskNetworkRequestFn: () => null,
       },
-      sanitize_properties: properties => scrub(properties),
+      sanitize_properties: properties => scrub(properties, true),
       loaded: client => {
         const session = client.get_session_id();
         const key = `telemetry-replay-${session}`;
