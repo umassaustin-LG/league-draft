@@ -1,3 +1,17 @@
+# ElevenLabs backend integration
+
+Set `ELEVENLABS_API_KEY` in the backend environment (or `server/.env`); it is
+optional and must never be exposed through a `VITE_` variable. For Docker Compose,
+export it in the shell or use `docker compose --env-file .env.local up -d`.
+In Kubernetes, replace the empty environment entry with a Secret reference.
+
+Authenticated clients can POST `/api/elevenlabs/token/` with the normal session
+cookie and CSRF header (no body required). It returns `{"token": "..."}`, a
+time-limited, single-use `realtime_scribe` credential, not the API key. Tokens are
+not cached; issuance is limited to 10 requests/minute per client IP. This endpoint
+is user-scoped and does not require an active organization. Missing configuration
+returns 503; upstream failures return a generic 502 without provider details.
+
 # Little League Draft Application
 
 A comprehensive draft management system for Little League baseball divisions. Streamlines the entire draft process from player evaluation import through final team roster generation, with advanced features for handling coach's kids, siblings, and multiple draft formats.

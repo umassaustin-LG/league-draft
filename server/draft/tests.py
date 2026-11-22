@@ -2,6 +2,9 @@ import json
 import time
 from unittest import mock
 
+from elevenlabs.core.api_error import ApiError
+from httpx import ReadTimeout
+
 from django.contrib.auth import get_user_model
 from django.core import mail
 from django.test import RequestFactory, TestCase, override_settings
@@ -21,6 +24,69 @@ from .models import (
 )
 from .services import DraftService
 from .views.helpers import RateLimiter, get_client_ip
+
+
+@override_settings(ELEVENLABS_API_KEY="")
+class ElevenLabsTokenTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(email="voice@example.com", password="test-password")
+        self.client.force_login(self.user)
+        self.url = reverse("elevenlabs-token")
+
+    @mock.patch("draft.elevenlabs_client.ElevenLabs")
+    def test_unconfigured_does_not_create_client(self, sdk):
+        response = self.client.post(self.url)
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json(), {"error": "ElevenLabs is not configured"})
+        sdk.assert_not_called()
+
+    @override_settings(ELEVENLABS_API_KEY="test-key")
+    @mock.patch("draft.elevenlabs_client.ElevenLabs")
+    def test_configured_returns_single_use_token(self, sdk):
+        sdk.return_value.tokens.single_use.create.return_value.token = "single-use-token"
+        response = self.client.post(self.url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"token": "single-use-token"})
+        self.assertIn("no-store", response["Cache-Control"])
+        sdk.assert_called_once_with(api_key="test-key", timeout=15)
+        sdk.return_value.tokens.single_use.create.assert_called_once_with(token_type="realtime_scribe")
+
+    @mock.patch("draft.views.elevenlabs.get_elevenlabs_client")
+    def test_unauthenticated_rejected(self, get_client):
+        self.client.logout()
+        self.assertEqual(self.client.post(self.url).status_code, 401)
+        get_client.assert_not_called()
+
+    @override_settings(ELEVENLABS_API_KEY="test-key")
+    @mock.patch("draft.elevenlabs_client.ElevenLabs")
+    def test_upstream_error_is_sanitized(self, sdk):
+        sdk.return_value.tokens.single_use.create.side_effect = ApiError(
+            status_code=401, body="sensitive provider details"
+        )
+        response = self.client.post(self.url)
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.json(), {"error": "Unable to create ElevenLabs token"})
+
+    @override_settings(ELEVENLABS_API_KEY="test-key")
+    @mock.patch("draft.elevenlabs_client.ElevenLabs")
+    def test_network_error_is_sanitized(self, sdk):
+        sdk.return_value.tokens.single_use.create.side_effect = ReadTimeout("provider details")
+        response = self.client.post(self.url)
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.json(), {"error": "Unable to create ElevenLabs token"})
+
+    @mock.patch("draft.views.elevenlabs.token_limiter.hit", return_value=(False, 20))
+    @mock.patch("draft.views.elevenlabs.get_elevenlabs_client")
+    def test_rate_limited_without_sdk_call(self, get_client, hit):
+        response = self.client.post(self.url)
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(response["Retry-After"], "20")
+        get_client.assert_not_called()
+
+    @mock.patch("draft.views.elevenlabs.get_elevenlabs_client")
+    def test_get_not_allowed(self, get_client):
+        self.assertEqual(self.client.get(self.url).status_code, 405)
+        get_client.assert_not_called()
 
 
 class GetClientIpTests(TestCase):
