@@ -1,6 +1,6 @@
 import * as Sentry from '@sentry/react';
 import posthog from 'posthog-js';
-import { scrub } from './scrub';
+import { scrub, scrubStrings } from './scrub';
 
 export function initTelemetry(): void {
   if (import.meta.env.VITE_SENTRY_DSN) {
@@ -15,6 +15,7 @@ export function initTelemetry(): void {
         blockAllMedia: true,
         networkDetailAllowUrls: [],
         networkCaptureBodies: false,
+        beforeAddRecordingEvent: event => scrubStrings(event),
       })],
       replaysSessionSampleRate: 0.25,
       replaysOnErrorSampleRate: 0.25,
@@ -40,9 +41,10 @@ export function initTelemetry(): void {
         maskTextSelector: '*',
         recordHeaders: false,
         recordBody: false,
-        maskNetworkRequestFn: () => null,
+        maskCapturedNetworkRequestFn: () => null,
       },
       sanitize_properties: properties => scrub(properties, true),
+      before_send: event => scrubStrings(event),
       loaded: client => {
         const session = client.get_session_id();
         const key = `telemetry-replay-${session}`;

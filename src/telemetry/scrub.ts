@@ -31,6 +31,15 @@ export function scrubString(value: string): string {
     .replace(email, '[REDACTED]').replace(phone, '[REDACTED]');
 }
 
+export function scrubStrings<T>(value: T): T {
+  if (typeof value === 'string') return scrubString(value) as T;
+  if (Array.isArray(value)) return value.map(item => scrubStrings(item)) as T;
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, scrubStrings(item)])) as T;
+  }
+  return value;
+}
+
 export function scrub<T>(value: T, posthog = false): T {
   const seen = new WeakSet<object>();
   function visit(item: unknown): unknown {
