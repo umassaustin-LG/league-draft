@@ -124,6 +124,10 @@ export const VoiceCopilot = ({ draftState, divisionId, screen, rules }: VoiceCop
   return (
     <section
       aria-label="Voice copilot"
+      // The draft board confirms a pending pick on Enter; keep Enter inside the copilot.
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.stopPropagation();
+      }}
       className="bg-surface border border-rule rounded-sharp px-3 py-3 mb-4"
       data-testid="voice-copilot"
     >
