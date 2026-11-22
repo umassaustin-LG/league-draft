@@ -9,7 +9,7 @@ export function initTelemetry(): void {
       environment: import.meta.env.VITE_SENTRY_ENVIRONMENT,
       sendDefaultPii: false,
       tracesSampleRate: 0.1,
-      integrations: [Sentry.replayIntegration({
+      integrations: [Sentry.browserTracingIntegration(), Sentry.replayIntegration({
         maskAllText: true,
         maskAllInputs: true,
         blockAllMedia: true,
