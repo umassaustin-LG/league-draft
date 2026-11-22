@@ -30,7 +30,8 @@ undo picks, or reopen the draft.
 A coach or viewer sees **View Division**, **View Draft**, or **View Rosters**
 instead of Start or Resume. The live board refreshes from the API every five
 seconds in a visible tab, doesn't interrupt the viewer with operator dialogs,
-and switches to team rosters at completion. The roster download is score-free.
+and switches to team rosters at completion. The roster view and download are
+score-free.
 
 ## Boundaries
 

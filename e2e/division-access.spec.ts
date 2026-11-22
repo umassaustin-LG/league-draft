@@ -21,7 +21,7 @@ function snapshot(
     age_range: { min: 10, max: 12 },
     players: [player],
     teams: [
-      { id: 'team-a', name: 'Owls', head_coach: 'Miller', draft_position: 1, roster: assigned ? [player] : [] },
+      { id: 'team-a', name: 'Owls', head_coach: 'Miller', draft_position: 1, total_score: assigned ? 92 : 0, roster: assigned ? [player] : [] },
       { id: 'team-b', name: 'Foxes', head_coach: 'Chen', draft_position: 2, roster: [] },
     ],
     draft_state: phase === 'upload' || phase === 'config' || generated ? null : {
@@ -98,6 +98,7 @@ test('coach can follow the live draft without league management controls', async
   divisions.live = snapshot('live', 'Live Majors', 'complete');
   await expect(page.getByRole('heading', { name: 'Team rosters' })).toBeVisible();
   await expect(page.getByText('Sandy Rivera')).toBeVisible();
+  await expect(page.getByText(/pts|^92\.0$/)).toHaveCount(0);
   await expect(page.getByRole('button', { name: /trade|return to draft setup|back to draft board/i })).toHaveCount(0);
   await expect(page.getByText('Assign Team Names')).toHaveCount(0);
   expect(writes).toEqual([]);
@@ -113,6 +114,7 @@ test('viewer sees generated rosters without entering Team Builder', async ({ pag
   await expect(page.getByRole('heading', { name: 'Generated AA', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Team rosters' })).toBeVisible();
   await expect(page.getByText('Sandy Rivera')).toBeVisible();
+  await expect(page.getByText(/pts|^92\.0$/)).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Download rosters' })).toBeVisible();
   await expect(page.getByRole('button', { name: /trade|generate|reset/i })).toHaveCount(0);
   expect(writes).toEqual([]);

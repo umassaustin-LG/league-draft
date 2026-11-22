@@ -93,7 +93,7 @@ export function DivisionOverview({ initialDivision, onBack }: {
                   Download rosters
                 </button>
               </div>
-              <TeamRosters teams={division.teams} currentTeamId={null} />
+              <TeamRosters teams={division.teams} currentTeamId={null} showScores={false} />
             </>
           ) : (
             <p className="border border-rule bg-surface px-5 py-4 text-sm text-ink-muted">

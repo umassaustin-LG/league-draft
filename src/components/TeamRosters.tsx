@@ -8,11 +8,14 @@ interface TeamRostersProps {
   currentRoundOrder?: string[];
   enforceAgeLimit?: boolean;
   maxPerAge?: number;
+  showScores?: boolean;
 }
 
-export const TeamRosters = ({ teams, currentTeamId, currentRoundOrder, enforceAgeLimit = false, maxPerAge = 0 }: TeamRostersProps) => {
+export const TeamRosters = ({
+  teams, currentTeamId, currentRoundOrder, enforceAgeLimit = false, maxPerAge = 0, showScores = true,
+}: TeamRostersProps) => {
   const viewMode = useViewMode();
-  const isPublicView = viewMode === 'public';
+  const scoresVisible = viewMode !== 'public' && showScores;
 
   // Sort teams by current round draft order if provided
   const sortedTeams = currentRoundOrder && currentRoundOrder.length > 0
@@ -62,8 +65,7 @@ export const TeamRosters = ({ teams, currentTeamId, currentRoundOrder, enforceAg
             </h3>
           </div>
 
-          {/* Team score - hidden in public view */}
-          {!isPublicView && (
+          {scoresVisible && (
             <div className="mb-3">
               <div className="text-2xl font-bold text-gray-900 dark:text-white">
                 {team.totalScore.toFixed(1)} pts
@@ -124,8 +126,7 @@ export const TeamRosters = ({ teams, currentTeamId, currentRoundOrder, enforceAg
                         <span className="ml-1 text-xs text-blue-600 dark:text-blue-400">★</span>
                       )}
                     </span>
-                    {/* Player score - hidden in public view */}
-                    {!isPublicView && (
+                    {scoresVisible && (
                       <span className="text-gray-600 dark:text-gray-400 text-xs ml-2">
                         {player.totalScore.toFixed(1)}
                       </span>
