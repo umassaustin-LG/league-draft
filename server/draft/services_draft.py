@@ -2,7 +2,8 @@ from django.db import transaction
 from django.utils import timezone
 from uuid import UUID
 
-from .models import Division, Team, Player, DraftState, DraftPick, Trade
+from .models import Division, Team, Player, DraftState, DraftPick, Trade, DraftAuditEvent
+from .services_readiness import evaluate_pick, RuleCheckError
 
 
 class DraftService:
@@ -12,7 +13,7 @@ class DraftService:
     @transaction.atomic
     def start_draft(
         cls, division_id: UUID, draft_format: str, draft_order: list[UUID],
-        force_restart: bool = False
+        force_restart: bool = False, actor=None
     ) -> DraftState:
         """Start a new draft for a division.
 
@@ -66,12 +67,14 @@ class DraftService:
         # Check for mandatory pick
         cls._check_and_set_mandatory_pick(draft_state, current_team, 1)
 
+        DraftAuditEvent.objects.create(draft_state=draft_state, action="start", round=1, actor=actor)
         return draft_state
 
     @classmethod
     @transaction.atomic
     def draft_player(
-        cls, draft_state_id: UUID, player_id: UUID, team_id: UUID
+        cls, draft_state_id: UUID, player_id: UUID, team_id: UUID,
+        actor=None, acknowledge_warnings=False
     ) -> DraftState:
         """Draft a player."""
         import logging
@@ -109,13 +112,19 @@ class DraftService:
             raise ValueError("Team not found in this division")
         overall_pick = draft_state.picks.count() + 1
 
+        warnings = evaluate_pick(draft_state, player, team)
+        if any(w["level"] == "block" for w in warnings) and not acknowledge_warnings:
+            raise RuleCheckError(warnings)
+        previously_locked = set(division.players.filter(locked_to_team__isnull=False).values_list("id", flat=True))
+
         # Create the pick
-        DraftPick.objects.create(
+        pick = DraftPick.objects.create(
             draft_state=draft_state,
             round=draft_state.current_round,
             pick=overall_pick,
             team_id=team_id,
             player_id=player_id,
+            round_order_snapshot=list(draft_state.current_round_order),
         )
 
         # Update player as drafted
@@ -135,6 +144,13 @@ class DraftService:
 
         # Handle sibling locking - follow chains for 3+ sibling groups
         cls._lock_sibling_chain(player, team)
+        pick.locked_sibling_ids = [str(p.id) for p in division.players.filter(locked_to_team=team).exclude(id__in=previously_locked)]
+        pick.save(update_fields=["locked_sibling_ids"])
+        DraftAuditEvent.objects.create(
+            draft_state=draft_state, action="pick", round=pick.round, pick=pick.pick,
+            team_id=team.id, player_id=player.id, actor=actor,
+            details={"overridden_warnings": warnings} if acknowledge_warnings and warnings else {},
+        )
 
         # Advance to next pick
         cls._advance_to_next_pick(draft_state)
@@ -144,7 +160,7 @@ class DraftService:
 
     @classmethod
     @transaction.atomic
-    def skip_pick(cls, draft_state_id: UUID, team_id: UUID) -> DraftState:
+    def skip_pick(cls, draft_state_id: UUID, team_id: UUID, actor=None) -> DraftState:
         """Skip the current pick (team gets one fewer player)."""
         draft_state = DraftState.objects.select_for_update().get(id=draft_state_id)
 
@@ -182,7 +198,9 @@ class DraftService:
             team_id=team_id,
             player_id=None,
             was_skipped=True,
+            round_order_snapshot=list(draft_state.current_round_order),
         )
+        DraftAuditEvent.objects.create(draft_state=draft_state, action="skip", round=draft_state.current_round, pick=overall_pick, team_id=team_id, actor=actor)
 
         # Advance to next pick
         cls._advance_to_next_pick(draft_state)
@@ -192,13 +210,27 @@ class DraftService:
 
     @classmethod
     @transaction.atomic
-    def undo_last_pick(cls, draft_state_id: UUID) -> DraftState:
+    def undo_last_pick(cls, draft_state_id: UUID, expected_pick=None, actor=None) -> DraftState:
         """Undo the last pick (including skipped picks)."""
         draft_state = DraftState.objects.select_for_update().get(id=draft_state_id)
 
         last_pick = draft_state.picks.order_by("-pick").first()
+        if expected_pick is not None and (not last_pick or last_pick.pick != expected_pick):
+            raise ValueError(f"Pick #{expected_pick} was already undone or a newer pick exists")
         if not last_pick:
             raise ValueError("No pick to undo")
+
+        DraftAuditEvent.objects.create(
+            draft_state=draft_state, action="undo", round=last_pick.round,
+            pick=last_pick.pick, team_id=last_pick.team_id, player_id=last_pick.player_id,
+            actor=actor, details={"undone_action": "skip" if last_pick.was_skipped else "pick",
+                "player_id": str(last_pick.player_id) if last_pick.player_id else None,
+                "team_id": str(last_pick.team_id), "pick": last_pick.pick},
+        )
+        draft_state.current_round_order = last_pick.round_order_snapshot or draft_state.current_round_order
+        draft_state.division.phase = "draft"
+        draft_state.division.completed_at = None
+        draft_state.division.save(update_fields=["phase", "completed_at"])
 
         # Handle skipped picks (no player was drafted)
         if last_pick.was_skipped or not last_pick.player_id:
@@ -238,7 +270,10 @@ class DraftService:
         player.save()
 
         # If player had siblings, remove sibling locks for the entire chain
-        cls._unlock_sibling_chain(player)
+        if last_pick.locked_sibling_ids:
+            Player.objects.filter(division=draft_state.division, id__in=last_pick.locked_sibling_ids, is_drafted=False).update(locked_to_team=None)
+        else:
+            cls._unlock_sibling_chain(player)
 
         # Update team score
         team.total_score = sum(p.total_score for p in team.roster.all())
@@ -285,6 +320,7 @@ class DraftService:
         player1_id: UUID,
         player2_id: UUID,
         reason: str,
+        actor=None,
     ) -> DraftState:
         """Create a trade."""
         from datetime import timedelta
@@ -344,6 +380,9 @@ class DraftService:
         team1.save()
         team2.total_score = sum(p.total_score for p in team2.roster.all())
         team2.save()
+
+        DraftAuditEvent.objects.create(draft_state=draft_state, action="trade", round=draft_state.current_round, actor=actor,
+            details={"team1_id": str(team1_id), "team2_id": str(team2_id), "player1_id": str(player1_id), "player2_id": str(player2_id), "reason": reason})
 
         draft_state.refresh_from_db()
         return draft_state

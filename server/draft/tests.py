@@ -974,3 +974,139 @@ class GeneratedRosterSummaryTests(CrossTenantTestBase):
         self.assertEqual(response.status_code, 200)
         team = next(row for row in response.json()["teams"] if row["id"] == str(self.victim_teams[0].id))
         self.assertEqual([row["id"] for row in team["roster"]], [str(player.id)])
+
+
+class DraftSafetyTests(CrossTenantTestBase):
+    def setUp(self):
+        super().setUp()
+        self.division = self.victim_division
+        self.players = self.victim_players
+        self.state = DraftService.start_draft(self.division.id, "snake", [t.id for t in self.victim_teams], actor=self.victim_admin)
+
+    def pick(self, index):
+        self.state = DraftService.draft_player(self.state.id, self.players[index].id, self.state.current_team_id, actor=self.victim_admin)
+
+    def test_undo_round_order_and_audit(self):
+        from .transformers import transform_draft_state
+        original = list(self.state.current_round_order)
+        self.pick(0)
+        self.pick(1)
+        self.assertNotEqual(self.state.current_round_order, original)
+        self.state = DraftService.undo_last_pick(self.state.id, expected_pick=2, actor=self.victim_admin)
+        self.assertEqual(self.state.current_round_order, original)
+        log = transform_draft_state(self.state)["audit_log"]
+        self.assertEqual([e["action"] for e in log], ["start", "pick", "pick", "undo"])
+        self.assertTrue(all(e["actor_name"] for e in log))
+        with self.assertRaisesMessage(ValueError, "Pick #2 was already undone or a newer pick exists"):
+            DraftService.undo_last_pick(self.state.id, expected_pick=2)
+        self.assertEqual(self.state.picks.count(), 1)
+
+    def test_double_undo_and_completion(self):
+        self.division.roster_size = 1
+        self.division.save()
+        self.pick(0)
+        self.pick(1)
+        self.assertTrue(self.state.is_draft_complete)
+        self.state = DraftService.undo_last_pick(self.state.id, expected_pick=2)
+        self.division.refresh_from_db()
+        self.assertEqual(self.division.phase, "draft")
+        self.assertIsNone(self.division.completed_at)
+        self.state = DraftService.undo_last_pick(self.state.id, expected_pick=1)
+        self.assertEqual(self.state.picks.count(), 0)
+        with self.assertRaisesMessage(ValueError, "No pick to undo"):
+            DraftService.undo_last_pick(self.state.id)
+
+    def test_age_override_and_pick_check_permission(self):
+        from .services_readiness import RuleCheckError
+        self.division.max_per_age = 1
+        self.division.save()
+        self.pick(0)
+        self.pick(1)
+        with self.assertRaises(RuleCheckError):
+            self.pick(2)
+        self.state = DraftService.draft_player(self.state.id, self.players[2].id, self.state.current_team_id, acknowledge_warnings=True)
+        self.assertTrue(self.state.audit_events.filter(action="pick").last().details["overridden_warnings"])
+        self.client.force_login(self.viewer)
+        response = self.client.post("/api/draft/pick-check/", data=json.dumps({"draft_state_id": str(self.state.id), "player_id": str(self.players[3].id), "team_id": str(self.state.current_team_id)}), content_type="application/json")
+        self.assertEqual(response.status_code, 403)
+
+    def test_sibling_warning_and_roster_balance(self):
+        from .services_readiness import evaluate_pick
+        self.players[0].sibling_id = self.players[1].id
+        self.players[0].save()
+        warnings = evaluate_pick(self.state, self.players[0], self.victim_teams[0])
+        self.assertTrue(any(w["code"] == "sibling_capacity" for w in warnings))
+        self.players[0].sibling_id = None
+        self.players[0].save()
+        self.players[1].total_score = 100
+        self.players[1].save()
+        self.pick(0)
+        self.pick(1)
+        self.players[2].total_score = 100
+        self.players[2].save()
+        warnings = evaluate_pick(self.state, self.players[2], self.state.current_team)
+        self.assertTrue(any(w["code"] == "roster_balance" for w in warnings))
+
+    def test_readiness_checks(self):
+        from .services_readiness import draft_readiness
+        self.assertTrue(draft_readiness(self.division)["ready"])
+        self.division.team_count = 3
+        self.division.roster_size = 0
+        self.division.max_per_age = 1
+        self.division.save()
+        self.players[0].is_coach_kid = True
+        self.players[0].sibling_id = self.attacker.id
+        self.players[0].save()
+        result = draft_readiness(self.division)
+        errors = {c["id"] for c in result["checks"] if c["level"] == "error"}
+        self.assertTrue({"teams", "roster_size", "player_pool", "age_cap", "coach_kids", "siblings"} <= errors)
+        self.assertFalse(result["ready"])
+
+    def test_readiness_sibling_conflict_and_warnings(self):
+        from .services_readiness import draft_readiness
+        p, sibling = self.players[:2]
+        p.is_coach_kid = sibling.is_coach_kid = True
+        p.coach_team = self.victim_teams[0]
+        sibling.coach_team = self.victim_teams[1]
+        p.sibling_id = sibling.id
+        p.little_league_age = 20
+        p.is_dne = True
+        p.save()
+        sibling.save()
+        checks = {c["id"]: c for c in draft_readiness(self.division)["checks"]}
+        self.assertEqual(checks["siblings"]["level"], "error")
+        for key in ("age_range", "dne", "sibling_links"):
+            self.assertEqual(checks[key]["level"], "warning")
+        sibling.coach_team = self.victim_teams[0]
+        sibling.save()
+        self.division.roster_size = 1
+        self.division.save()
+        checks = {c["id"]: c for c in draft_readiness(self.division)["checks"]}
+        self.assertEqual(checks["coach_kids"]["level"], "error")
+
+    def test_recalculated_undo_restores_snapshot(self):
+        self.state.draft_format = "recalculated"
+        self.state.save()
+        self.players[0].total_score = 100
+        self.players[0].save()
+        original = list(self.state.current_round_order)
+        self.pick(0)
+        self.pick(1)
+        self.assertNotEqual(self.state.current_round_order, original)
+        self.state = DraftService.undo_last_pick(self.state.id)
+        self.assertEqual(self.state.current_round_order, original)
+
+    def test_pick_check_read_only_and_block_response(self):
+        self.division.max_per_age = 1
+        self.division.save()
+        self.pick(0)
+        self.pick(1)
+        self.client.force_login(self.victim_admin)
+        body = json.dumps({"draft_state_id": str(self.state.id), "player_id": str(self.players[2].id), "team_id": str(self.state.current_team_id)})
+        checked = self.client.post("/api/draft/pick-check/", data=body, content_type="application/json")
+        self.assertEqual(checked.status_code, 200)
+        self.assertTrue(any(w["level"] == "block" for w in checked.json()["warnings"]))
+        response = self.client.post("/api/draft/pick/", data=body, content_type="application/json")
+        self.assertEqual(response.status_code, 409)
+        self.assertTrue(response.json()["error"].startswith("Rule check failed:"))
+        self.assertEqual(self.state.picks.count(), 2)

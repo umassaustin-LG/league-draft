@@ -166,6 +166,13 @@ def transform_draft_state(draft_state) -> dict:
         "mandatory_pick": mandatory_pick,
         "picks": [transform_draft_pick(p) for p in draft_state.picks.all()],
         "trades": [transform_trade(t) for t in draft_state.trades.all()],
+        "audit_log": [{
+            "id": str(e.id), "action": e.action, "round": e.round, "pick": e.pick,
+            "team_id": str(e.team_id) if e.team_id else None,
+            "player_id": str(e.player_id) if e.player_id else None,
+            "actor_name": (f"{e.actor.first_name} {e.actor.last_name}".strip() or e.actor.email) if e.actor else None,
+            "details": e.details, "timestamp": e.timestamp.isoformat(),
+        } for e in draft_state.audit_events.select_related("actor").all()],
     }
 
 
