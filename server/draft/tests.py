@@ -49,7 +49,9 @@ class ElevenLabsTokenTests(TestCase):
         self.assertEqual(response.json(), {"token": "single-use-token"})
         self.assertIn("no-store", response["Cache-Control"])
         sdk.assert_called_once_with(api_key="test-key", timeout=15)
-        sdk.return_value.tokens.single_use.create.assert_called_once_with(token_type="realtime_scribe")
+        sdk.return_value.tokens.single_use.create.assert_called_once_with(
+            token_type="realtime_scribe", request_options={"max_retries": 0}
+        )
 
     @mock.patch("draft.views.elevenlabs.get_elevenlabs_client")
     def test_unauthenticated_rejected(self, get_client):
