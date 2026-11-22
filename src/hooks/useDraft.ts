@@ -301,7 +301,7 @@ export const useDraft = (_divisionId?: string) => {
     }
   }, [pendingRuleWarnings, draftPlayer]);
 
-  const undoLastPick = useCallback(async () => {
+  const undoLastPick = useCallback(async (expectedPick?: number) => {
     // Synchronous lock check to prevent race conditions from rapid clicks
     if (operationInProgress.current) {
       return;
@@ -320,7 +320,7 @@ export const useDraft = (_divisionId?: string) => {
     try {
       operationInProgress.current = true;
       setIsLoading(true);
-      const result = await api.undoLastPick(draftStateId.current, draftState.picks[draftState.picks.length - 1]?.pick);
+      const result = await api.undoLastPick(draftStateId.current, expectedPick ?? draftState.picks[draftState.picks.length - 1]?.pick);
       setDraftState(result.draftState);
       setError(null);
 

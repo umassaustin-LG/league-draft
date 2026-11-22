@@ -1,9 +1,10 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { Search, X, ChevronDown, ChevronUp, Lock, Users } from 'lucide-react';
-import { Player, Team } from '../../types';
+import { Player, Team, PickWarning } from '../../types';
 import { getTeamDisplayName } from '../../utils/teamUtils';
 
 interface DraftBoardPlayerGridProps {
+  warningsByPlayer?: Record<string, PickWarning[]>;
   players: Player[];
   currentTeamId: string | null;
   teams: Team[];
@@ -31,6 +32,7 @@ type SortField = 'rank' | 'bib' | 'name' | 'age' | 'school' | 'allstar' | 'sibli
 type SortDirection = 'asc' | 'desc';
 
 export const DraftBoardPlayerGrid = ({
+  warningsByPlayer = {},
   players,
   currentTeamId,
   teams,
@@ -620,6 +622,10 @@ export const DraftBoardPlayerGrid = ({
                     }`}>
                       {player.name}
                     </span>
+                    {!player.isDrafted && warningsByPlayer[player.id]?.length > 0 && <span
+                      title={warningsByPlayer[player.id].map(w => w.message).join('\n')}
+                      className={`ml-2 text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded-sharp border ${warningsByPlayer[player.id].some(w => w.level === 'block') ? 'text-alert border-alert bg-alert-soft' : 'text-warn border-warn bg-surface-2'}`}
+                    >{warningsByPlayer[player.id].some(w => w.level === 'block') ? 'Rule block' : 'Warning'}</span>}
                   </td>
 
                   {/* Age */}

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { ChevronRight, ChevronLeft, ChevronDown, ChevronUp, CheckCircle, AlertCircle, Users, UserCheck, Loader2 } from 'lucide-react';
-import { Team, Player, DraftFormat } from '../types';
+import { Team, Player, DraftFormat, DraftReadiness } from '../types';
+import { api } from '../api/client';
 import { SimulationModal } from './SimulationModal';
 import { CoachKidPreviewGrid } from './CoachKidPreviewGrid';
 import { getTeamDisplayName } from '../utils/teamUtils';
@@ -57,6 +58,29 @@ const SORT_DEBOUNCE_MS = 800;
 const AUTO_SAVE_DEBOUNCE_MS = 1500;
 
 export const DraftConfig = ({ teams, players, divisionId, rosterSize, onConfigComplete, onTeamsUpdate, onBack }: DraftConfigProps) => {
+  const [readiness, setReadiness] = useState<DraftReadiness | null>(null);
+  const [readinessError, setReadinessError] = useState<string | null>(null);
+  const [readinessLoading, setReadinessLoading] = useState(false);
+  const readinessRequest = useRef(0);
+  const refreshReadiness = useCallback(async () => {
+    const request = ++readinessRequest.current;
+    setReadiness(null);
+    if (!divisionId) return;
+    setReadinessLoading(true);
+    setReadinessError(null);
+    try {
+      const result = await api.getDraftReadiness(divisionId);
+      if (request === readinessRequest.current) setReadiness(result);
+    } catch {
+      if (request === readinessRequest.current) setReadinessError('Readiness check unavailable. You can still start the draft.');
+    } finally {
+      if (request === readinessRequest.current) setReadinessLoading(false);
+    }
+  }, [divisionId]);
+  useEffect(() => {
+    void refreshReadiness();
+    return () => { readinessRequest.current++; };
+  }, [refreshReadiness, teams]);
   const [draftFormat, setDraftFormat] = useState<DraftFormat | null>(null);
   // Store position by team ID (immediate updates for input display)
   const [teamPositions, setTeamPositions] = useState<Record<string, number | null>>({});
@@ -356,6 +380,7 @@ export const DraftConfig = ({ teams, players, divisionId, rosterSize, onConfigCo
   };
 
   const handleStart = () => {
+    if (readiness?.ready === false) return;
     // Validate draft format is selected
     if (!draftFormat) {
       alert('Please select a draft format before starting.');
@@ -422,7 +447,8 @@ export const DraftConfig = ({ teams, players, divisionId, rosterSize, onConfigCo
             </button>
             <button
               onClick={handleStart}
-              disabled={!validation.valid || !draftFormat}
+              disabled={!validation.valid || !draftFormat || readiness?.ready === false}
+              title={readiness?.ready === false ? 'Resolve readiness errors before starting' : undefined}
               className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors ${
                 validation.valid && draftFormat
                   ? 'bg-blue-500 hover:bg-blue-600 text-white'
@@ -434,6 +460,19 @@ export const DraftConfig = ({ teams, players, divisionId, rosterSize, onConfigCo
             </button>
           </div>
         </div>
+
+        <section className="bg-surface border border-rule rounded-sharp p-4 mb-6 text-ink" aria-label="Draft-day readiness">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-semibold">Draft-day readiness</h2>
+            <button onClick={() => void refreshReadiness()} disabled={readinessLoading} className="text-sm text-brand disabled:opacity-50">{readinessLoading ? 'Checking…' : 'Refresh'}</button>
+          </div>
+          {readinessError && <p role="status" className="text-warn text-sm">{readinessError}</p>}
+          {readiness?.checks.map(check => <div key={check.id} className="flex gap-3 py-2 border-t border-rule">
+            {check.level === 'ok' ? <CheckCircle className="w-4 h-4 text-brand shrink-0 mt-1" /> : <AlertCircle className={`w-4 h-4 shrink-0 mt-1 ${check.level === 'error' ? 'text-alert' : 'text-warn'}`} />}
+            <div><div className="font-medium text-sm">{check.title} <span className="text-xs text-ink-muted">{check.level}</span></div><p className="text-sm text-ink-muted">{check.detail}</p></div>
+          </div>)}
+          {readiness?.ready === false && <p className="text-alert text-sm mt-3">Resolve readiness errors before starting the draft.</p>}
+        </section>
 
         {/* Draft Rules Summary - Collapsible */}
         {(coachKids.length > 0 || siblingGroups.length > 0) && (
