@@ -119,7 +119,7 @@ export const VoiceCopilot = ({ draftState, divisionId, screen, rules }: VoiceCop
     [draftState, screen, rules]
   );
 
-  const error = startError ?? (scribe.status === 'error' ? scribe.error ?? 'Voice connection failed.' : null);
+  const error = startError ?? (scribe.isConnected ? null : scribe.error);
 
   return (
     <section
