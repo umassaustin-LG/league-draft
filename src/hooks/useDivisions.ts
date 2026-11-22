@@ -8,6 +8,7 @@ import {
 } from '../types';
 import { api, ApiError } from '../api/client';
 import { saveTeamsToApi, savePlayersToApi } from '../api';
+import { hasGeneratedRosters } from '../utils/divisionAccess';
 
 // Validation: A division is complete enough to persist when it has players
 export function isDivisionValid(division: Division | null): boolean {
@@ -110,6 +111,7 @@ export function useDivisions(userId?: string) {
         mode: division.mode,
         teamCount: division.teamCount,
         playerCount: division.players.length,
+        hasGeneratedRosters: hasGeneratedRosters(division),
         phase: division.phase,
         createdAt: division.createdAt,
         completedAt: division.completedAt,
@@ -189,6 +191,7 @@ export function useDivisions(userId?: string) {
             mode: division.mode,
             teamCount: division.teamCount,
             playerCount: division.players.length,
+            hasGeneratedRosters: hasGeneratedRosters(division),
             phase: division.phase,
             createdAt: division.createdAt,
             completedAt: division.completedAt,

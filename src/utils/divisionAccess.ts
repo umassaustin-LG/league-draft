@@ -1,4 +1,4 @@
-import type { DivisionSummary, User } from '../types';
+import type { Division, DivisionSummary, User } from '../types';
 
 export function canManageDivision(
   user: User | null,
@@ -28,8 +28,15 @@ export function getDefaultLeagueAdminMembership(user: User | null) {
   return undefined;
 }
 
-export function getDivisionView(division: Pick<DivisionSummary, 'mode' | 'phase'>) {
-  if (division.phase === 'complete') return 'rosters';
+export function hasGeneratedRosters(division: Pick<Division, 'mode' | 'teams'>): boolean {
+  return division.mode === 'league-generated' && division.teams.some(team => team.roster.length > 0);
+}
+
+export function getDivisionView(
+  division: Pick<DivisionSummary, 'mode' | 'phase' | 'hasGeneratedRosters'> | Pick<Division, 'mode' | 'phase' | 'teams'>,
+) {
+  const generated = 'hasGeneratedRosters' in division ? division.hasGeneratedRosters : hasGeneratedRosters(division);
+  if (division.phase === 'complete' || generated) return 'rosters';
   if (division.mode === 'live-draft' && division.phase === 'draft') return 'draft';
   return 'setup';
 }

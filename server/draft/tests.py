@@ -838,3 +838,33 @@ class CompletedRosterAuthorizationTests(CrossTenantTestBase):
         self.assertEqual(self.player1.drafted_by_team_id, self.victim_teams[1].id)
         self.assertEqual(self.player2.drafted_by_team_id, self.victim_teams[0].id)
         self.assertEqual(Trade.objects.filter(draft_state=self.draft).count(), 1)
+
+
+class GeneratedRosterSummaryTests(CrossTenantTestBase):
+    def test_assignments_make_generated_rosters_available_without_a_phase_change(self):
+        division = self.victim_division
+        division.mode = "league-generated"
+        division.phase = "upload"
+        division.save(update_fields=["mode", "phase"])
+        self.client.force_login(self.viewer)
+        url = reverse("divisions-list-create")
+
+        def summary():
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, 200)
+            return next(row for row in response.json() if row["id"] == str(division.id))
+
+        self.assertFalse(summary()["has_generated_rosters"])
+
+        player = self.victim_players[0]
+        player.drafted_by_team = self.victim_teams[0]
+        player.save(update_fields=["drafted_by_team"])
+
+        data = summary()
+        self.assertEqual(data["phase"], "upload")
+        self.assertTrue(data["has_generated_rosters"])
+        self.assertEqual(data["player_count"], len(self.victim_players))
+        response = self.client.get(reverse("division-detail", args=[division.id]), {"include": "all"})
+        self.assertEqual(response.status_code, 200)
+        team = next(row for row in response.json()["teams"] if row["id"] == str(self.victim_teams[0].id))
+        self.assertEqual([row["id"] for row in team["roster"]], [str(player.id)])

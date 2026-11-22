@@ -882,7 +882,10 @@ function App() {
     return (
       <TeamBuilderFlow
         division={activeDivision}
-        onBack={handleBackToSelector}
+        onBack={() => {
+          void handleBackToSelector();
+          void refreshSummaries();
+        }}
         onUpdateTeams={(teams) => updateActiveDivision({ teams })}
         onUpdatePlayers={(players) => updateActiveDivision({ players })}
         onUpdatePhase={(phase) => updateActiveDivision({ phase })}

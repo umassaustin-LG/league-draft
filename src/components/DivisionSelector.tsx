@@ -70,17 +70,16 @@ export const DivisionSelector = ({
   };
 
   // Show all divisions - they persist as soon as they're created
-  const sortedDivisions = [...divisions].sort((a, b) => {
-    // In-progress first, then by creation date (newest first)
-    if (a.phase === 'complete' && b.phase !== 'complete') return 1;
-    if (a.phase !== 'complete' && b.phase === 'complete') return -1;
-    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-  }).map(division => ({
+  const sortedDivisions = divisions.map(division => ({
     division,
     canManage: !!onDeleteDivision && canManageDivision(user ?? null, division),
     view: getDivisionView(division),
     workspace: user?.organizations.find(m => m.organizationId === division.organizationId),
-  }));
+  })).sort((a, b) => {
+    // In-progress first, then by creation date (newest first)
+    return Number(a.view === 'rosters') - Number(b.view === 'rosters') ||
+      new Date(b.division.createdAt).getTime() - new Date(a.division.createdAt).getTime();
+  });
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center p-4">
@@ -170,8 +169,8 @@ export const DivisionSelector = ({
                         <h3 className="text-xl font-semibold text-gray-900 dark:text-white truncate">
                           {division.name}
                         </h3>
-                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${getPhaseColor(division.phase)}`}>
-                          {getPhaseLabel(division.phase)}
+                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${getPhaseColor(view === 'rosters' ? 'complete' : division.phase)}`}>
+                          {division.hasGeneratedRosters ? 'Rosters Ready' : getPhaseLabel(division.phase)}
                         </span>
                       </div>
 
@@ -196,7 +195,7 @@ export const DivisionSelector = ({
 
                     {/* Action Buttons */}
                     <div className="flex items-center gap-2 ml-4">
-                      {!canManage || division.phase === 'complete' ? (
+                      {!canManage || view === 'rosters' ? (
                         <button
                           onClick={() => onSelectDivision(division.id)}
                           className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"

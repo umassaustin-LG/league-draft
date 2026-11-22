@@ -3,24 +3,28 @@ import { expect, test, type Page } from '@playwright/test';
 const orgId = 'league-a';
 const createdAt = '2026-01-01T12:00:00Z';
 
-function snapshot(id: string, name: string, phase: 'config' | 'draft' | 'complete', generated = false) {
+function snapshot(
+  id: string, name: string, phase: 'upload' | 'config' | 'draft' | 'complete',
+  generated = false, assigned = phase === 'complete',
+) {
   const complete = phase === 'complete';
   const player = {
     id: 'player-a', bib: '1', name: 'Sandy Rivera', first_name: 'Sandy', last_name: 'Rivera',
-    total_score: 92, little_league_age: 11, is_drafted: complete,
-    drafted_by_team_id: complete ? 'team-a' : null,
+    total_score: 92, little_league_age: 11, is_drafted: assigned,
+    drafted_by_team_id: assigned ? 'team-a' : null,
   };
   return {
     id, name, phase, organization_id: orgId, created_at: createdAt,
     mode: generated ? 'league-generated' : 'live-draft',
+    has_generated_rosters: generated && assigned,
     preset: 'majors', team_count: 2, player_count: 1, roster_size: 1,
     age_range: { min: 10, max: 12 },
     players: [player],
     teams: [
-      { id: 'team-a', name: 'Owls', head_coach: 'Miller', draft_position: 1, roster: complete ? [player] : [] },
+      { id: 'team-a', name: 'Owls', head_coach: 'Miller', draft_position: 1, roster: assigned ? [player] : [] },
       { id: 'team-b', name: 'Foxes', head_coach: 'Chen', draft_position: 2, roster: [] },
     ],
-    draft_state: phase === 'config' || generated ? null : {
+    draft_state: phase === 'upload' || phase === 'config' || generated ? null : {
       id: 'draft-a', draft_format: 'snake', draft_order: ['team-a', 'team-b'],
       current_round_order: ['team-a', 'team-b'], current_round: 1, current_pick_in_round: 1,
       current_team_id: complete ? null : 'team-a', is_draft_complete: complete, picks: [], trades: [],
@@ -37,7 +41,8 @@ async function mockLeague(page: Page, role: 'admin' | 'coach' | 'viewer', signed
     setup: snapshot('setup', 'Preparing Majors', 'config'),
     live: snapshot('live', 'Live Majors', 'draft'),
     final: snapshot('final', 'Final AAA', 'complete'),
-    generated: snapshot('generated', 'Generated AA', 'complete', true),
+    generated: snapshot('generated', 'Generated AA', 'upload', true, true),
+    preparing: snapshot('preparing', 'Preparing AA', 'upload', true),
   };
   const writes: string[] = [];
   await page.route(url => url.pathname.startsWith('/api/'), async route => {
@@ -73,7 +78,7 @@ test('coach can follow the live draft without league management controls', async
   await expect(page.getByRole('button', { name: /create .*division|evaluation setup/i })).toHaveCount(0);
   await expect(page.getByTitle('Delete division')).toHaveCount(0);
 
-  await page.getByRole('button', { name: 'View Division', exact: true }).click();
+  await page.getByRole('article', { name: 'Preparing Majors' }).getByRole('button', { name: 'View Division' }).click();
   await expect(page.getByText('The league is still setting up', { exact: false })).toBeVisible();
   await page.getByRole('button', { name: 'Back to Divisions' }).click();
   await page.getByRole('button', { name: 'View Draft' }).click();
@@ -101,9 +106,13 @@ test('coach can follow the live draft without league management controls', async
 test('viewer sees generated rosters without entering Team Builder', async ({ page }) => {
   const { writes } = await mockLeague(page, 'viewer');
   await page.goto('/');
-  await page.getByRole('article', { name: 'Generated AA' }).getByRole('button', { name: 'View Rosters' }).click();
+  const generated = page.getByRole('article', { name: 'Generated AA' });
+  await expect(generated.getByText('Rosters Ready')).toBeVisible();
+  await expect(page.getByRole('article', { name: 'Preparing AA' }).getByRole('button', { name: 'View Division' })).toBeVisible();
+  await generated.getByRole('button', { name: 'View Rosters' }).click();
   await expect(page.getByRole('heading', { name: 'Generated AA', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Team rosters' })).toBeVisible();
+  await expect(page.getByText('Sandy Rivera')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Download rosters' })).toBeVisible();
   await expect(page.getByRole('button', { name: /trade|generate|reset/i })).toHaveCount(0);
   expect(writes).toEqual([]);
