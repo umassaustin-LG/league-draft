@@ -17,6 +17,7 @@ import { RegistrationRecord } from '../types/evaluation';
 import { EvaluationImport } from './evaluation';
 import { NameMatchResolver, TeamBuilderResults, RequestConfirmation, TradeSuggestions } from './teamBuilder';
 import { TradeModal } from './TradeModal';
+import { isSuggestedTradeCurrent } from '../utils/teamBuilderTrades';
 import {
   runTeamBuilderAlgorithm,
   runRequestsFirstAlgorithm,
@@ -619,8 +620,8 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
 
   // Handle applying a suggested trade
   const handleApplyTrade = useCallback((trade: TradeCandidate) => {
+    if (!requestsFirstResult || !isSuggestedTradeCurrent(trade, finalPlayers)) return;
     setIsFinalized(false);
-    if (!requestsFirstResult) return;
 
     // Mark trade as applied
     setAppliedTradeIds(prev => new Set([...prev, trade.id]));
@@ -726,6 +727,7 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
     if (!player1 || !player2) return;
 
     setIsFinalized(false);
+    setRequestsFirstResult(null);
     // Update player assignments
     const updatedPlayers = finalPlayers.map(p => {
       if (p.id === player1Id) {
