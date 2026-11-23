@@ -460,6 +460,13 @@ function App() {
       } finally {
         setIsSaving(false);
       }
+    } else {
+      await updateActiveDivision({
+        players: updatedPlayers,
+        teams: updatedTeams,
+        rosterSize: Math.ceil(updatedPlayers.length / activeDivision.teamCount),
+        phase: 'review',
+      });
     }
 
     setAllPlayers(updatedPlayers);
