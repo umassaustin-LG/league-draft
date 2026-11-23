@@ -9,14 +9,11 @@ import {
   Eye,
   EyeOff,
   Trophy,
-  Volume2,
-  VolumeX,
 } from 'lucide-react';
 import { DraftState, Team, DivisionAgeRange, Player, PickWarning, DraftPick } from '../types';
 import { getPickWarnings } from '../utils/draftSafety';
 import { getNextPick, calculateDraftOrder } from '../utils/draftOrder';
 import { useViewMode } from '../contexts/ViewContext';
-import { useDraftAnnouncer } from '../hooks/useDraftAnnouncer';
 import { getTeamDisplayName } from '../utils/teamUtils';
 import { DraftBoardPlayerGrid } from './draft/DraftBoardPlayerGrid';
 import { DraftBoardRosterView } from './draft/DraftBoardRosterView';
@@ -76,7 +73,6 @@ export const DraftBoard = ({
   const isPublicView = viewMode === 'public';
   const controls = isPublicView ? undefined : draftControls;
   const canRunDraft = !!controls;
-  const announcer = useDraftAnnouncer(draftState, viewMode);
 
   const [drawerMode, setDrawerMode] = useState<'players' | 'rosters' | 'history'>('players');
   const [ruleDialog, setRuleDialog] = useState<{ playerId: string; warnings: PickWarning[] } | null>(null);
@@ -355,11 +351,6 @@ export const DraftBoard = ({
         </div>
       </Modal>}
       {undoPick && controls && <Modal maxWidth="md" onDismiss={() => setUndoPick(null)}><div className="p-6 text-ink"><h2 className="text-xl font-semibold mb-4">{undoDescription}</h2><p className="text-sm text-ink-muted mb-5">This action remains in draft history.</p><div className="flex justify-end gap-3"><button className="border border-rule px-4 py-2 rounded-button" onClick={() => setUndoPick(null)}>Cancel</button><button className="bg-brand text-white px-4 py-2 rounded-button" disabled={isLoading} onClick={() => { controls.onUndo(undoPick.pick); setUndoPick(null); }}>Undo pick</button></div></div></Modal>}
-      {announcer.caption && (
-        <div role="status" className="mb-4 border border-rule bg-surface-raised px-6 py-4 text-2xl font-semibold text-ink">
-          {announcer.caption}
-        </div>
-      )}
       {/* Round Completion Interstitial Modal */}
       {showRoundInterstitial && interstitialData && (
         <Modal onDismiss={() => setShowRoundInterstitial(false)} maxWidth="lg">
@@ -498,17 +489,6 @@ export const DraftBoard = ({
 
               {/* Zone 3 — admin / live */}
               <div className="flex items-start gap-1">
-                {announcer.enabled && (
-                  <button
-                    onClick={announcer.toggleMuted}
-                    aria-label={announcer.muted ? 'Unmute pick announcer' : 'Mute pick announcer'}
-                    aria-pressed={!announcer.muted}
-                    title={announcer.muted ? 'Unmute pick announcer' : 'Mute pick announcer'}
-                    className="text-ink-muted hover:text-ink border border-rule hover:border-rule-strong px-3 py-1.5 rounded-sharp transition-colors"
-                  >
-                    {announcer.muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-                  </button>
-                )}
                 {controls ? (
                   <>
                     {isFinalRound && (

@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { buildAnnouncement, newestAppendedPick } from '../src/utils/draftAnnouncer';
 import type { DraftPick, Player, Team } from '../src/types';
+import { getDivisionView } from '../src/utils/divisionAccess';
 
 const pick: DraftPick = { round: 2, pick: 12, teamId: 't', playerId: 'p' };
 const teams = Array.from({ length: 10 }, (_, index) => ({
@@ -30,4 +31,16 @@ test('only the latest newly appended non-skipped pick is selected', () => {
   expect(newestAppendedPick([pick], [{ ...pick, playerId: 'other' }, pick])).toBeNull();
   expect(newestAppendedPick([], [{ ...pick, wasSkipped: true }])).toBeNull();
   expect(newestAppendedPick([], [{ ...pick, playerId: undefined }])).toBeNull();
+});
+
+test('completion refresh selects final pick even when the division switches to rosters', () => {
+  const before = { mode: 'live-draft' as const, phase: 'draft' as const, teams, picks: [pick] };
+  const finalPick = { ...pick, pick: 13 };
+  const after = { ...before, phase: 'complete' as const, picks: [pick, finalPick] };
+  expect(getDivisionView(before)).toBe('draft');
+  expect(getDivisionView(after)).toBe('rosters');
+  expect(buildAnnouncement(newestAppendedPick(before.picks, after.picks)!, teams, players))
+    .toBe('With pick 13, the Tigers select Ava Garcia.');
+  expect(newestAppendedPick(after.picks, after.picks)).toBeNull();
+  expect(newestAppendedPick(after.picks, before.picks)).toBeNull();
 });

@@ -14,6 +14,7 @@ import { RegistrationCSVRecord } from './components/evaluation/DualCSVUpload';
 import { PlayerReview } from './components/PlayerReview';
 import { DraftConfig } from './components/DraftConfig';
 import { DraftBoard } from './components/DraftBoard';
+import { DraftAnnouncer } from './components/DraftAnnouncer';
 import { DraftComplete } from './components/DraftComplete';
 import { TeamBuilderFlow } from './components/TeamBuilderFlow';
 import { LoginPage } from './components/LoginPage';
@@ -962,6 +963,7 @@ function App() {
       )}
 
       <div className={`${phase !== 'upload' && phase !== 'complete' ? 'pt-12' : ''} ${saveError ? 'mt-12' : ''}`}>
+        <DraftAnnouncer key={activeDivision.id} draftState={phase === 'draft' || phase === 'complete' ? draftState : undefined} />
         {phase === 'upload' && (
           <div>
             {/* Back button - separate bar above content (hidden for Excel import which has its own) */}
