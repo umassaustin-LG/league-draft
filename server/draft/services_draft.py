@@ -91,6 +91,7 @@ class DraftService:
             raise ValueError("Not this team's turn to pick")
 
         # Check for mandatory pick
+        previously_locked = cls._sibling_locks(draft_state)
         cls._release_exhausted_sibling_locks(draft_state)
         if (
             draft_state.mandatory_player_id
@@ -116,7 +117,6 @@ class DraftService:
         warnings = evaluate_pick(draft_state, player, team)
         if any(w["level"] == "block" for w in warnings) and not acknowledge_warnings:
             raise RuleCheckError(warnings)
-        previously_locked = set(division.players.filter(locked_to_team__isnull=False).values_list("id", flat=True))
 
         # Create the pick
         pick = DraftPick.objects.create(
@@ -146,13 +146,12 @@ class DraftService:
         # Handle sibling locking - follow chains for 3+ sibling groups
         cls._lock_sibling_chain(player, team)
         cls._release_exhausted_sibling_locks(draft_state)
-        pick.locked_sibling_ids = [str(p.id) for p in division.players.filter(locked_to_team=team).exclude(id__in=previously_locked)]
-        pick.save(update_fields=["locked_sibling_ids"])
+        cls._record_sibling_lock_changes(draft_state, pick, previously_locked)
         overridden_warnings = [w for w in warnings if w["level"] == "block"] if acknowledge_warnings else []
         DraftAuditEvent.objects.create(
             draft_state=draft_state, action="pick", round=pick.round, pick=pick.pick,
             team_id=team.id, player_id=player.id, actor=actor,
-            details={"overridden_warnings": overridden_warnings} if overridden_warnings else {},
+            details={"sibling_locks_tracked": True, **({"overridden_warnings": overridden_warnings} if overridden_warnings else {})},
         )
 
         # Advance to next pick
@@ -180,6 +179,7 @@ class DraftService:
 
         # Cannot skip if remaining players >= remaining draft spots
         # (all players must be drafted)
+        previously_locked = cls._sibling_locks(draft_state)
         cls._release_exhausted_sibling_locks(draft_state)
         available = list(division.players.filter(is_drafted=False))
         has_eligible_player = any(
@@ -200,7 +200,7 @@ class DraftService:
         overall_pick = draft_state.picks.count() + 1
 
         # Create a skipped pick record (no player assigned)
-        DraftPick.objects.create(
+        pick = DraftPick.objects.create(
             draft_state=draft_state,
             round=draft_state.current_round,
             pick=overall_pick,
@@ -211,6 +211,7 @@ class DraftService:
         )
         DraftAuditEvent.objects.create(draft_state=draft_state, action="skip", round=draft_state.current_round, pick=overall_pick, team_id=team_id, actor=actor)
         cls._release_exhausted_sibling_locks(draft_state)
+        cls._record_sibling_lock_changes(draft_state, pick, previously_locked)
 
         # Advance to next pick
         cls._advance_to_next_pick(draft_state)
@@ -241,6 +242,9 @@ class DraftService:
         draft_state.division.phase = "draft"
         draft_state.division.completed_at = None
         draft_state.division.save(update_fields=["phase", "completed_at"])
+
+        for player_id, team_id in last_pick.released_sibling_locks.items():
+            draft_state.division.players.filter(id=player_id).update(locked_to_team_id=team_id)
 
         # Handle skipped picks (no player was drafted)
         if last_pick.was_skipped or not last_pick.player_id:
@@ -280,7 +284,8 @@ class DraftService:
         player.save()
 
         # If player had siblings, remove sibling locks for the entire chain
-        if last_pick.locked_sibling_ids:
+        locks_tracked = draft_state.audit_events.filter(action="pick", pick=last_pick.pick).order_by("-timestamp").first()
+        if last_pick.locked_sibling_ids or (locks_tracked and locks_tracked.details.get("sibling_locks_tracked")):
             Player.objects.filter(division=draft_state.division, id__in=last_pick.locked_sibling_ids, is_drafted=False).update(locked_to_team=None)
         else:
             cls._unlock_sibling_chain(player)
@@ -573,6 +578,20 @@ class DraftService:
                 draft_state.mandatory_sibling_name = forced_player.sibling or ""
 
             draft_state.save()
+
+    @classmethod
+    def _sibling_locks(cls, draft_state: DraftState) -> dict:
+        return {str(player_id): str(team_id) for player_id, team_id in
+                draft_state.division.players.filter(locked_to_team__isnull=False).values_list("id", "locked_to_team_id")}
+
+    @classmethod
+    def _record_sibling_lock_changes(cls, draft_state: DraftState, pick: DraftPick, previous: dict) -> None:
+        current = cls._sibling_locks(draft_state)
+        pick.locked_sibling_ids = [player_id for player_id, team_id in current.items()
+                                   if team_id == str(pick.team_id) and player_id not in previous]
+        pick.released_sibling_locks = {player_id: team_id for player_id, team_id in previous.items()
+                                       if current.get(player_id) != team_id}
+        pick.save(update_fields=["locked_sibling_ids", "released_sibling_locks"])
 
     @classmethod
     def _release_exhausted_sibling_locks(cls, draft_state: DraftState) -> None:

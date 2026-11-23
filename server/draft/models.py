@@ -549,6 +549,7 @@ class DraftPick(models.Model):
     was_skipped = models.BooleanField(default=False)
     round_order_snapshot = models.JSONField(default=list)
     locked_sibling_ids = models.JSONField(default=list)
+    released_sibling_locks = models.JSONField(default=dict)
 
     timestamp = models.DateTimeField(auto_now_add=True)
 

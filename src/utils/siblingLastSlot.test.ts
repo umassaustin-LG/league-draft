@@ -91,6 +91,23 @@ describe('live last-slot sibling recovery', () => {
     expect(html).not.toContain('Locked to Team 1');
   });
 
+  it('renders a restored lock from the undo API response without releasing it again', () => {
+    const restored = finalPickState();
+    restored.players[0].siblingId = 'last-sibling';
+    restored.players[3].siblingId = 'one';
+    restored.players[2].isDrafted = false;
+    restored.players[2].draftedByTeamId = undefined;
+    restored.players[2].siblingId = undefined;
+    restored.picks.pop();
+    restored.currentTeamId = 'a';
+    restored.currentPickInRound = 1;
+    const { players, released } = getDraftSiblingState(restored, 2);
+    expect(players[3].lockedToTeamId).toBe('a');
+    expect(getBestAvailable([players[3]], 'b')).toBeNull();
+    expect(released).toEqual([]);
+    expect(renderBoard(restored)).not.toContain('Sibling rule could not be honored');
+  });
+
   it('allows emergency skip before the final round when only another coach’s kid remains', () => {
     const state = finalPickState();
     state.players[3].isCoachKid = true;
