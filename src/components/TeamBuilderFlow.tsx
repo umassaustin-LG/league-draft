@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   ArrowLeft,
   Wand2,
@@ -27,6 +27,7 @@ import {
   TeamBuilderPlayer,
   DEFAULT_TEAM_BUILDER_CONFIG,
   applyAssignments,
+  summarizeTeamBuilderAssignments,
 } from '../utils/teamBuilderAlgorithm';
 import {
   RegistrationData,
@@ -618,6 +619,22 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
     }
   }, [evalPlayers, teams, registrationPlayers, config, normalizationResult, algorithmMode, resolvedRequests, requestsFirstConfig, onUpdatePlayers, onUpdateTeams, isSavingGeneration]);
 
+  const currentResult = useMemo(() => {
+    if (!algorithmResult) return null;
+    const playerTeams = new Map(finalPlayers.map(player => [player.id, player.draftedByTeamId]));
+    const assignments = algorithmResult.assignments.map(assignment => ({
+      ...assignment, teamId: playerTeams.get(assignment.playerId) || assignment.teamId,
+    }));
+    const result = summarizeTeamBuilderAssignments(finalPlayers, finalTeams, assignments, resolvedRequests,
+      requestsFirstConfig, algorithmResult.warnings, requestsFirstResult?.clusters);
+    return {
+      ...result,
+      suggestedTrades: result.suggestedTrades.map(trade => ({
+        ...trade, id: [trade.fromTeamId, trade.toTeamId, trade.player1Id, trade.player2Id].join(':'),
+      })),
+    };
+  }, [algorithmResult, finalPlayers, finalTeams, resolvedRequests, requestsFirstConfig, requestsFirstResult]);
+
   // Handle applying a suggested trade
   const handleApplyTrade = useCallback((trade: TradeCandidate) => {
     if (!requestsFirstResult || !isSuggestedTradeCurrent(trade, finalPlayers)) return;
@@ -666,16 +683,16 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
 
   // Handle applying all suggested trades
   const handleApplyAllTrades = useCallback(() => {
-    if (!requestsFirstResult) return;
+    if (!requestsFirstResult || !currentResult) return;
 
-    const pendingTrades = requestsFirstResult.suggestedTrades.filter(
+    const pendingTrades = currentResult.suggestedTrades.filter(
       t => !appliedTradeIds.has(t.id) && !dismissedTradeIds.has(t.id)
     );
 
     for (const trade of pendingTrades) {
       handleApplyTrade(trade);
     }
-  }, [requestsFirstResult, appliedTradeIds, dismissedTradeIds, handleApplyTrade]);
+  }, [requestsFirstResult, currentResult, appliedTradeIds, dismissedTradeIds, handleApplyTrade]);
 
   // Handle dismissing a trade
   const handleDismissTrade = useCallback((tradeId: string) => {
@@ -727,7 +744,8 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
     if (!player1 || !player2) return;
 
     setIsFinalized(false);
-    setRequestsFirstResult(null);
+    setAppliedTradeIds(new Set());
+    setDismissedTradeIds(new Set());
     // Update player assignments
     const updatedPlayers = finalPlayers.map(p => {
       if (p.id === player1Id) {
@@ -1894,15 +1912,15 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
               </p>
             )}
             <TeamBuilderResults
-              result={algorithmResult}
+              result={currentResult!}
               players={finalPlayers}
               onRerun={handleRerun}
             />
 
             {/* Trade Suggestions (only for requests-first algorithm) */}
-            {requestsFirstResult && requestsFirstResult.suggestedTrades.length > 0 && (
+            {requestsFirstResult && currentResult && currentResult.suggestedTrades.length > 0 && (
               <TradeSuggestions
-                suggestedTrades={requestsFirstResult.suggestedTrades}
+                suggestedTrades={currentResult.suggestedTrades}
                 players={finalPlayers}
                 onApplyTrade={handleApplyTrade}
                 onApplyAll={handleApplyAllTrades}
