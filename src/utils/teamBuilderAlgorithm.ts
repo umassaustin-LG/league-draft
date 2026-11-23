@@ -148,10 +148,6 @@ export function fillMinimumRosters(
   const addPreference = (playerId: string, targetId: string, type: 'coach' | 'teammate') => {
     preferences.set(`${playerId}:${type}:${targetId}`, { playerId, targetId, type });
   };
-  for (const player of players) {
-    if (player.resolvedCoachTeamId) addPreference(player.id, player.resolvedCoachTeamId, 'coach');
-    for (const id of player.resolvedTeammateIds || []) addPreference(player.id, id, 'teammate');
-  }
   for (const request of requests) {
     if (request.resolvedTargetId && ['auto-confirmed', 'user-confirmed'].includes(request.status)) {
       addPreference(request.playerId, request.resolvedTargetId, request.requestType);
@@ -233,7 +229,8 @@ export function fillMinimumRosters(
 export function runTeamBuilderAlgorithm(
   players: TeamBuilderPlayer[],
   teams: Team[],
-  config: TeamBuilderConfig = DEFAULT_TEAM_BUILDER_CONFIG
+  config: TeamBuilderConfig = DEFAULT_TEAM_BUILDER_CONFIG,
+  resolvedRequests: ResolvedRequest[] = []
 ): TeamBuilderResult {
   const warnings: string[] = [];
   const assignments: AssignmentResult[] = [];
@@ -584,7 +581,7 @@ export function runTeamBuilderAlgorithm(
   // Calculate results
   // =========================================================================
 
-  fillMinimumRosters(players, workingTeams, assignments, config, warnings);
+  fillMinimumRosters(players, workingTeams, assignments, config, warnings, resolvedRequests);
 
   // Team summaries - use average scores for balance comparison since teams may have different sizes
   const teamAverages = workingTeams.map(team => ({
