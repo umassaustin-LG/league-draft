@@ -1686,7 +1686,7 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
                         {config.maxRosterSize}
                       </div>
                       <button
-                        onClick={() => setConfig({ ...config, maxRosterSize: Math.min(18, config.maxRosterSize + 1) })}
+                        onClick={() => setConfig({ ...config, maxRosterSize: Math.min(Math.max(18, evalPlayers.length, config.maxRosterSize), config.maxRosterSize + 1) })}
                         className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600 font-bold"
                       >
                         +
