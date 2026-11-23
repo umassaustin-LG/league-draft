@@ -39,7 +39,10 @@ export function InviteModal({ leagueId, leagueName, onClose, onInviteSent }: Inv
     } catch (err) {
       if (err instanceof Error && err.name === 'ApiError') {
         const apiError = err as ApiError;
-        setError(apiError.details?.error as string || 'Failed to send invitation');
+        const messages = Object.values(apiError.details || {}).flat().filter(
+          (value): value is string => typeof value === 'string'
+        );
+        setError(messages.join(' ') || 'Failed to send invitation');
       } else {
         setError('Failed to send invitation');
       }
