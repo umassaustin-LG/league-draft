@@ -106,6 +106,27 @@ class CoachSiblingTests(TestCase):
         self.delta.refresh_from_db()
         self.assertIsNone(self.delta.locked_to_team_id)
 
+    def test_approved_split_preserves_third_sibling_lock_and_undo(self):
+        echo = self.singles[0]
+        echo.sibling_id = self.delta.id
+        echo.projected_round = 2
+        echo.save()
+        self.delta.projected_round = 1
+        self.delta.save()
+        state = DraftService.draft_player(self.state.id, self.cedar.id, self.teams[0].id, acknowledge_warnings=True)
+        echo.refresh_from_db()
+        self.assertEqual(echo.locked_to_team_id, self.teams[0].id)
+        for player in self.singles[1:4]:
+            state = DraftService.draft_player(state.id, player.id, state.current_team_id)
+        state = DraftService.draft_player(state.id, self.delta.id, self.teams[4].id)
+        echo.refresh_from_db()
+        self.assertEqual(echo.locked_to_team_id, self.teams[0].id)
+        self.assertEqual(state.mandatory_player_id, echo.id)
+        state = DraftService.undo_last_pick(state.id, expected_pick=5)
+        echo.refresh_from_db()
+        self.assertEqual(echo.locked_to_team_id, self.teams[0].id)
+        self.assertEqual(state.mandatory_player_id, self.delta.id)
+
     def test_resume_can_skip_after_repairing_foreign_coach_mandatory(self):
         self.singles[0].delete()
         self.set_stale_mandatory()

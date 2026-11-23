@@ -153,7 +153,7 @@ class DraftService:
         DraftAuditEvent.objects.create(
             draft_state=draft_state, action="pick", round=pick.round, pick=pick.pick,
             team_id=team.id, player_id=player.id, actor=actor,
-            details={"overridden_warnings": overridden_warnings} if overridden_warnings else {},
+            details={"sibling_locks_tracked": True, **({"overridden_warnings": overridden_warnings} if overridden_warnings else {})},
         )
 
         # Advance to next pick
@@ -275,7 +275,8 @@ class DraftService:
         player.save()
 
         # If player had siblings, remove sibling locks for the entire chain
-        if last_pick.locked_sibling_ids:
+        locks_tracked = draft_state.audit_events.filter(action="pick", pick=last_pick.pick).order_by("-timestamp").first()
+        if last_pick.locked_sibling_ids or (locks_tracked and locks_tracked.details.get("sibling_locks_tracked")):
             Player.objects.filter(division=draft_state.division, id__in=last_pick.locked_sibling_ids, is_drafted=False).update(locked_to_team=None)
         else:
             cls._unlock_sibling_chain(player)
@@ -605,8 +606,12 @@ class DraftService:
                     id=current.sibling_id, division=division, is_drafted=False
                 ).first()
                 if sibling:
-                    sibling.locked_to_team = None if sibling.is_coach_kid and sibling.coach_team_id and sibling.coach_team_id != team.id else team
-                    sibling.save()
+                    if sibling.is_coach_kid and sibling.coach_team_id and sibling.coach_team_id != team.id:
+                        sibling.locked_to_team = None
+                        sibling.save()
+                    elif not sibling.locked_to_team_id or sibling.locked_to_team_id == team.id:
+                        sibling.locked_to_team = team
+                        sibling.save()
                     processed_ids.add(sibling.id)
                     to_process.append(sibling)
 
@@ -616,8 +621,12 @@ class DraftService:
             ).exclude(id__in=processed_ids)
 
             for sibling in reverse_siblings:
-                sibling.locked_to_team = None if sibling.is_coach_kid and sibling.coach_team_id and sibling.coach_team_id != team.id else team
-                sibling.save()
+                if sibling.is_coach_kid and sibling.coach_team_id and sibling.coach_team_id != team.id:
+                    sibling.locked_to_team = None
+                    sibling.save()
+                elif not sibling.locked_to_team_id or sibling.locked_to_team_id == team.id:
+                    sibling.locked_to_team = team
+                    sibling.save()
                 processed_ids.add(sibling.id)
                 to_process.append(sibling)
 

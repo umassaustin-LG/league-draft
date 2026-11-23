@@ -135,4 +135,23 @@ describe('coach assignment takes precedence over sibling locks', () => {
     expect(ignored[1].lockedToTeamId).toBe('t1');
     expect(runSimulation([], teams, teams.map(t => t.id), 'straight', { includeCoachKids: true, includeSiblings: true }).players).toEqual([]);
   });
+
+  it('preserves the third sibling’s original lock after an approved split', () => {
+    const players = [...family(), player('Echo', { siblingId: 'Delta', lockedToTeamId: 't1' })];
+    players[0].isDrafted = true;
+    players[0].draftedByTeamId = 't1';
+    players[1].isDrafted = true;
+    lockSiblingToTeam(players, players[1], 't5');
+    expect(players[2].lockedToTeamId).toBe('t1');
+  });
+
+  it('simulation does not steal the original team’s reserved sibling when drafting the coach kid', () => {
+    const players = [...family(), player('Echo', { siblingId: 'Delta' }),
+      ...Array.from({ length: 7 }, (_, i) => player(`Single ${i}`, { totalScore: 80 - i }))];
+    players[1].projectedRound = 1;
+    const result = runSimulation(players, teams, teams.map(t => t.id), 'straight', { includeCoachKids: true, includeSiblings: true });
+    expect(result.players[0].draftedByTeamId).toBe('t1');
+    expect(result.players[1].draftedByTeamId).toBe('t5');
+    expect(result.players[2].draftedByTeamId).toBe('t1');
+  });
 });

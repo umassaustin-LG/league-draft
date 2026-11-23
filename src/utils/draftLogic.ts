@@ -192,7 +192,7 @@ export function lockSiblingToTeam(
       const sibling = players.find(p => p.id === current.siblingId);
       if (sibling && !sibling.isDrafted && !processed.has(sibling.id)) {
         if (!includeCoachKids || !sibling.isCoachKid || !sibling.coachTeamId || sibling.coachTeamId === teamId) {
-          sibling.lockedToTeamId = teamId;
+          if (!sibling.lockedToTeamId || sibling.lockedToTeamId === teamId) sibling.lockedToTeamId = teamId;
         } else {
           sibling.lockedToTeamId = undefined;
         }
@@ -205,7 +205,7 @@ export function lockSiblingToTeam(
     players.forEach(p => {
       if (p.siblingId === current.id && !p.isDrafted && !processed.has(p.id)) {
         if (!includeCoachKids || !p.isCoachKid || !p.coachTeamId || p.coachTeamId === teamId) {
-          p.lockedToTeamId = teamId;
+          if (!p.lockedToTeamId || p.lockedToTeamId === teamId) p.lockedToTeamId = teamId;
         } else {
           p.lockedToTeamId = undefined;
         }

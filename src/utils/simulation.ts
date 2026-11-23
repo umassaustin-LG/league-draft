@@ -57,7 +57,9 @@ export function runSimulation(
         || player.lockedToTeamId === coachTeamId);
       if (new Set([...group, ...owed].map(player => player.id)).size <= totalRounds) {
         for (const player of group) {
-          if (!player.isCoachKid || !player.coachTeamId) player.lockedToTeamId = coachTeamId;
+          if ((!player.isCoachKid || !player.coachTeamId) && (!player.lockedToTeamId || player.lockedToTeamId === coachTeamId)) {
+            player.lockedToTeamId = coachTeamId;
+          }
         }
       }
     }
