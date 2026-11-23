@@ -17,7 +17,7 @@ export interface VoiceCopilotRules {
   maxPerAge: number;
 }
 
-export type VoiceCopilotScreen = 'players' | 'rosters';
+export type VoiceCopilotScreen = 'players' | 'rosters' | 'history';
 
 export const VOICE_COPILOT_COMMANDS = [
   "Who's on the clock?",

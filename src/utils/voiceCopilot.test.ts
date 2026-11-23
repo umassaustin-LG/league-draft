@@ -168,7 +168,7 @@ describe('getSuggestedCommands', () => {
 
   it('suggests every command it shows is understood', () => {
     const state = buildState({ currentTeamId: 't2', mandatoryPick: { playerId: 'p2', reason: 'coach-kid' } });
-    for (const screen of ['players', 'rosters'] as const) {
+    for (const screen of ['players', 'rosters', 'history'] as const) {
       for (const s of [buildState(), state]) {
         for (const command of getSuggestedCommands(s, screen, rules)) {
           expect(parseVoiceQuery(command, s).intent).not.toBe('unknown');
