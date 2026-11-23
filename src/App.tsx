@@ -353,9 +353,6 @@ function App() {
       });
     }
 
-    // Clear dual CSV verification state after processing
-    setDualCSVVerification(null);
-
     if (coachAssignments.length > 0) {
       // Group assignments by team name
       const teamAssignments = new Map<string, CoachAssignment[]>();
@@ -469,6 +466,7 @@ function App() {
       });
     }
 
+    setDualCSVVerification(null);
     setAllPlayers(updatedPlayers);
     setPlayers(updatedPlayers);
 
