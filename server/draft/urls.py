@@ -6,6 +6,8 @@ Uses plain Django function-based views (no DRF).
 
 from django.urls import path
 
+from .views.elevenlabs import elevenlabs_token
+
 from .views import (
     # Auth
     health_view,
@@ -66,6 +68,7 @@ from .views import (
 )
 
 urlpatterns = [
+    path("api/elevenlabs/token/", elevenlabs_token, name="elevenlabs-token"),
     # Health
     path("health", health_view, name="health"),
 

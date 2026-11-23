@@ -12,3 +12,4 @@ gunicorn==22.0.0
 # Utilities
 python-dotenv==1.0.1
 pydantic==2.9.2
+elevenlabs==2.79.0
