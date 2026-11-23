@@ -108,7 +108,15 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
   const [unmatchedPlayers, setUnmatchedPlayers] = useState<RegistrationPlayer[]>([]);
 
   // Algorithm config
-  const [config, setConfig] = useState<TeamBuilderConfig>(DEFAULT_TEAM_BUILDER_CONFIG);
+  const [config, setConfig] = useState<TeamBuilderConfig>(() => ({
+    ...DEFAULT_TEAM_BUILDER_CONFIG,
+    maxRosterSize: Math.max(
+      DEFAULT_TEAM_BUILDER_CONFIG.maxRosterSize,
+      division.rosterSize,
+      Math.ceil(division.players.length / Math.max(1, division.teams.length)),
+      ...division.teams.map(team => team.roster.length)
+    ),
+  }));
 
   // Normalization result (from request resolution step)
   const [normalizationResult, setNormalizationResult] = useState<NormalizationResult | null>(null);
@@ -704,7 +712,7 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
     if (!algorithmResult) {
       handleProceedToConfirmRequests();
     } else {
-      setStep('generate');
+      setStep('configure');
     }
     setAlgorithmResult(null);
   }, [algorithmResult, handleProceedToConfirmRequests]);

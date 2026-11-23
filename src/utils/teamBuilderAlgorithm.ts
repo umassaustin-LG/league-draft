@@ -660,8 +660,11 @@ export function applyAssignments(
   teams: Team[],
   assignments: AssignmentResult[]
 ): { players: Player[]; teams: Team[] } {
-  const playerMap = new Map(players.map(p => [p.id, { ...p }]));
-  const teamMap = new Map(teams.map(t => [t.id, { ...t, roster: [] as Player[] }]));
+  const playerMap = new Map(players.map(p => [p.id, {
+    ...p, isDrafted: false, draftedByTeamId: undefined as string | undefined,
+    draftedInRound: undefined as number | undefined, draftedAtPick: undefined as number | undefined,
+  }]));
+  const teamMap = new Map(teams.map(t => [t.id, { ...t, roster: [] as Player[], totalScore: 0 }]));
 
   for (const assignment of assignments) {
     const player = playerMap.get(assignment.playerId);
