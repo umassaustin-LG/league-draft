@@ -20,10 +20,77 @@ from .models import (
     RateLimitCounter,
     Season,
     Team,
+    Trade,
     User,
 )
 from .services import DraftService
 from .views.helpers import RateLimiter, get_client_ip
+from league_draft.telemetry import before_send, scrub
+
+
+class TelemetryScrubberTests(TestCase):
+    def test_url_path_secrets(self):
+        for path in ('/join/short', '/api/leagues/join/short', '/reset/uid/short',
+                     '/reset-password/uid/short', '/invite/short', '/invitation/short',
+                     '/accept/short', '/token/short', '/confirm/short'):
+            clean = scrub({'url': 'https://example.com' + path + '?private=yes'})['url']
+            self.assertNotIn('short', clean)
+            self.assertNotIn('private=yes', clean)
+        for secret in ('12345678-1234-1234-1234-123456789abc', 'abcdefghijklmnopqrst', '%61' * 20):
+            self.assertEqual(scrub('/draft/' + secret), '/draft/[REDACTED]')
+        self.assertEqual(scrub('/draft/players'), '/draft/players')
+        self.assertEqual(scrub('/reset-password?uid=abc&token=secret'), '/reset-password')
+
+    def test_nested_sensitive_properties(self):
+        event = {'extra': {'firstName': 'Alice', 'players': ['Alice'], 'safe': 42}}
+        self.assertEqual(scrub(event), {
+            'extra': {'firstName': '[REDACTED]', 'players': '[REDACTED]', 'safe': 42},
+        })
+        self.assertEqual(event['extra']['firstName'], 'Alice')
+
+    def test_error_strings_and_requests(self):
+        event = {
+            'exception': {'values': [{'value': 'Contact a@example.com or +1 (212) 555-1234'}]},
+            'request': {'url': 'https://example.com/draft?secret=value#email',
+                        'data': {'private': 'body'}, 'cookies': 'session',
+                        'headers': {'Authorization': 'secret'}, 'query_string': 'private'},
+            'user': {'id': 'opaque-id', 'email': 'a@example.com', 'ip_address': '1.2.3.4'},
+        }
+        clean = before_send(event, {})
+        self.assertEqual(clean['exception']['values'][0]['value'], 'Contact [REDACTED] or [REDACTED]')
+        self.assertEqual(clean['request'], {'url': 'https://example.com/draft'})
+        self.assertEqual(clean['user'], {'id': 'opaque-id'})
+
+    def test_empty_and_breadcrumb(self):
+        self.assertEqual(scrub({}), {})
+        self.assertIsNone(scrub(None))
+        self.assertEqual(before_send({'message': 'private', 'data': {'body': 'secret'}}, {}),
+                         {'message': 'private'})
+
+    def test_word_boundaries_and_exception_messages(self):
+        self.assertEqual(scrub({'message': 'x'}), {'message': 'x'})
+        event = {'exception': {'values': [{'message': 'Contact a@example.com or 212-555-1234'}]},
+                 'packages': 'x', 'language': 'en', 'filename': 'main.ts',
+                 'player_name': 'Alice', 'firstName': 'Alice', 'roster': ['Alice'],
+                 'coachEmail': 'a@example.com', 'teams': ['A'], 'scores': [10]}
+        clean = scrub(event)
+        self.assertEqual(clean['exception']['values'][0]['message'], 'Contact [REDACTED] or [REDACTED]')
+        for key in ('packages', 'language', 'filename'):
+            self.assertEqual(clean[key], event[key])
+        for key in ('player_name', 'firstName', 'roster', 'coachEmail', 'teams', 'scores'):
+            self.assertEqual(clean[key], '[REDACTED]')
+
+    def test_posthog_system_properties(self):
+        properties = {'token': 'phc_project', 'distinct_id': 'opaque', '$pathname': '/draft',
+                      '$os_name': 'Linux', '$current_url': 'https://example.com/?private=yes',
+                      '$email': 'a@example.com', 'coachEmail': 'a@example.com'}
+        clean = scrub(properties, posthog=True)
+        for key in ('token', 'distinct_id', '$pathname', '$os_name'):
+            self.assertEqual(clean[key], properties[key])
+        self.assertEqual(clean['$current_url'], 'https://example.com/')
+        self.assertEqual(clean['$email'], '[REDACTED]')
+        self.assertEqual(clean['coachEmail'], '[REDACTED]')
+        self.assertEqual(scrub({'token': 'private'}), {'token': '[REDACTED]'})
 
 
 @override_settings(ELEVENLABS_API_KEY="")
@@ -127,6 +194,104 @@ class ElevenLabsTokenTests(TestCase):
     def test_get_not_allowed(self, get_client):
         self.assertEqual(self.client.get(self.url).status_code, 405)
         get_client.assert_not_called()
+
+
+@override_settings(ELEVENLABS_API_KEY="test-key")
+class AnnouncerTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user("announcer@example.com", "Passw0rd!x")
+        organization = Organization.objects.create(name="League", slug="announcer")
+        OrganizationMembership.objects.create(user=self.user, organization=organization, role="admin")
+        self.client.force_login(self.user)
+
+    def speak(self, data=None):
+        return self.client.post("/api/elevenlabs/speak/", data=json.dumps(
+            {"text": "With pick 12, the Tigers select Ava Garcia."} if data is None else data
+        ), content_type="application/json")
+
+    @override_settings(ELEVENLABS_API_KEY="")
+    def test_not_configured(self):
+        self.assertEqual(self.client.get("/api/elevenlabs/status/").json(), {"enabled": False})
+        self.assertEqual(self.speak().status_code, 503)
+
+    def test_auth_required(self):
+        self.client.logout()
+        self.assertEqual(self.client.get("/api/elevenlabs/status/").json(), {"enabled": False})
+        self.assertEqual(self.speak().status_code, 401)
+
+    @mock.patch("draft.elevenlabs_client.ElevenLabs")
+    def test_non_admins_cannot_announce(self, sdk):
+        for role in ("coach", "viewer"):
+            self.user.memberships.update(role=role)
+            self.assertEqual(self.client.get("/api/elevenlabs/status/").json(), {"enabled": False})
+            self.assertEqual(self.speak().status_code, 403)
+        sdk.assert_not_called()
+
+    @mock.patch("draft.elevenlabs_client.ElevenLabs")
+    def test_master_admin_without_membership_can_announce(self, sdk):
+        self.user.memberships.all().delete()
+        self.user.role = "master_admin"
+        self.user.save()
+        sdk.return_value.text_to_speech.convert.return_value = [b"audio"]
+        self.assertEqual(self.client.get("/api/elevenlabs/status/").json(), {"enabled": True})
+        self.assertEqual(self.speak().content, b"audio")
+        sdk.return_value.text_to_speech.convert.assert_called_once()
+
+    @mock.patch("draft.elevenlabs_client.ElevenLabs")
+    def test_active_tenant_takes_precedence_over_other_admin_membership(self, sdk):
+        other = Organization.objects.create(name="Other", slug="announcer-other")
+        OrganizationMembership.objects.create(user=self.user, organization=other, role="coach")
+        headers = {"HTTP_X_ORGANIZATION_ID": str(other.id)}
+        self.assertEqual(self.client.get("/api/elevenlabs/status/", **headers).json(), {"enabled": False})
+        self.assertEqual(self.client.post("/api/elevenlabs/speak/",
+            {"text": "Announcement"}, content_type="application/json", **headers).status_code, 403)
+        sdk.assert_not_called()
+        sdk.return_value.text_to_speech.convert.return_value = [b"audio"]
+        self.assertEqual(self.client.get("/api/elevenlabs/status/").json(), {"enabled": True})
+        self.assertEqual(self.speak().status_code, 200)
+
+    def test_membership_required(self):
+        self.user.memberships.all().delete()
+        self.assertEqual(self.speak().status_code, 403)
+
+    @mock.patch("draft.elevenlabs_client.ElevenLabs")
+    def test_success(self, upstream):
+        upstream.return_value.text_to_speech.convert.return_value = iter([b"au", b"dio"])
+        self.assertEqual(self.client.get("/api/elevenlabs/status/").json(), {"enabled": True})
+        response = self.speak()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, b"audio")
+        self.assertEqual(response["Content-Type"], "audio/mpeg")
+        self.assertIn("no-store", response["Cache-Control"])
+        self.assertEqual(upstream.return_value.text_to_speech.convert.call_args.kwargs["model_id"], "eleven_flash_v2_5")
+        self.assertEqual(upstream.return_value.text_to_speech.convert.call_args.kwargs["request_options"], {"max_retries": 0})
+
+    @mock.patch("draft.elevenlabs_client.ElevenLabs")
+    def test_upstream_failure(self, upstream):
+        for error in (ApiError(status_code=500, body="private upstream detail"), ReadTimeout("private detail")):
+            upstream.return_value.text_to_speech.convert.side_effect = error
+            response = self.speak()
+            self.assertEqual(response.status_code, 502)
+            self.assertEqual(response.json(), {"error": "Announcer unavailable"})
+
+    @mock.patch("draft.elevenlabs_client.ElevenLabs")
+    def test_invalid_text(self, upstream):
+        for data in ({"text": "x" * 201}, {"text": ""}, {"text": " "}, {}, [], {"text": 123}):
+            self.assertEqual(self.speak(data).status_code, 400)
+        upstream.return_value.text_to_speech.convert.assert_not_called()
+
+    def test_rate_limit(self):
+        with mock.patch("draft.elevenlabs_client.ElevenLabs") as upstream:
+            upstream.return_value.text_to_speech.convert.side_effect = ReadTimeout("upstream")
+            for _ in range(30):
+                self.speak()
+        self.assertEqual(self.speak().status_code, 429)
+
+    def test_csrf_required(self):
+        from django.test import Client
+        client = Client(enforce_csrf_checks=True)
+        client.force_login(self.user)
+        self.assertEqual(client.post("/api/elevenlabs/speak/", {}, content_type="application/json").status_code, 403)
 
 
 class GetClientIpTests(TestCase):
@@ -876,3 +1041,251 @@ class DraftPickAuthorizationTests(CrossTenantTestBase):
         self.assertEqual(response.status_code, 200)
         self.victim_players[0].refresh_from_db()
         self.assertTrue(self.victim_players[0].is_drafted)
+
+
+class CompletedRosterAuthorizationTests(CrossTenantTestBase):
+    def setUp(self):
+        super().setUp()
+        self.coach = User.objects.create_user("coach@example.com", "pw-Coach-123!")
+        OrganizationMembership.objects.create(
+            user=self.coach, organization=self.victim_org, role="coach"
+        )
+        self.victim_division.phase = "complete"
+        self.victim_division.save(update_fields=["phase"])
+        self.draft = DraftState.objects.create(
+            division=self.victim_division, draft_format="snake", is_draft_complete=True
+        )
+        team1, team2 = self.victim_teams
+        self.player1, self.player2 = self.victim_players[:2]
+        for player, team in ((self.player1, team1), (self.player2, team2)):
+            player.drafted_by_team = team
+            player.is_drafted = True
+            player.save(update_fields=["drafted_by_team", "is_drafted"])
+        self.team_url = reverse("team-detail", args=[team1.id])
+        self.trade_data = {
+            "draft_state_id": str(self.draft.id),
+            "team1_id": str(team1.id),
+            "team2_id": str(team2.id),
+            "player1_id": str(self.player1.id),
+            "player2_id": str(self.player2.id),
+            "reason": "Balance rosters",
+        }
+
+    def _trade(self):
+        return self.client.post(reverse("draft-trade"), self.trade_data, content_type="application/json")
+
+    def _rename_team(self):
+        return self.client.patch(self.team_url, {"name": "Rockets"}, content_type="application/json")
+
+    def test_coach_and_viewer_can_read_but_cannot_change_completed_rosters(self):
+        for user in (self.coach, self.viewer):
+            with self.subTest(user=user):
+                self.client.force_login(user)
+                division_url = reverse("division-detail", args=[self.victim_division.id])
+                response = self.client.get(division_url, {"include": "all"})
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json()["phase"], "complete")
+                self.assertEqual(self._rename_team().status_code, 403)
+                self.assertEqual(self._trade().status_code, 403)
+
+        self.victim_teams[0].refresh_from_db()
+        self.player1.refresh_from_db()
+        self.player2.refresh_from_db()
+        self.assertNotEqual(self.victim_teams[0].name, "Rockets")
+        self.assertEqual(self.player1.drafted_by_team_id, self.victim_teams[0].id)
+        self.assertEqual(self.player2.drafted_by_team_id, self.victim_teams[1].id)
+        self.assertFalse(Trade.objects.filter(draft_state=self.draft).exists())
+
+    def test_league_admin_can_rename_teams_and_trade_after_the_draft(self):
+        self.client.force_login(self.victim_admin)
+        self.assertEqual(self._rename_team().status_code, 200)
+        self.victim_teams[0].refresh_from_db()
+        self.assertEqual(self.victim_teams[0].name, "Rockets")
+        response = self._trade()
+        self.assertEqual(response.status_code, 200, response.content)
+        self.player1.refresh_from_db()
+        self.player2.refresh_from_db()
+        self.assertEqual(self.player1.drafted_by_team_id, self.victim_teams[1].id)
+        self.assertEqual(self.player2.drafted_by_team_id, self.victim_teams[0].id)
+        self.assertEqual(Trade.objects.filter(draft_state=self.draft).count(), 1)
+
+
+class GeneratedRosterSummaryTests(CrossTenantTestBase):
+    def test_assignments_make_generated_rosters_available_without_a_phase_change(self):
+        division = self.victim_division
+        division.mode = "league-generated"
+        division.phase = "upload"
+        division.save(update_fields=["mode", "phase"])
+        self.client.force_login(self.viewer)
+        url = reverse("divisions-list-create")
+
+        def summary():
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, 200)
+            return next(row for row in response.json() if row["id"] == str(division.id))
+
+        self.assertFalse(summary()["has_generated_rosters"])
+
+        player = self.victim_players[0]
+        player.drafted_by_team = self.victim_teams[0]
+        player.save(update_fields=["drafted_by_team"])
+
+        data = summary()
+        self.assertEqual(data["phase"], "upload")
+        self.assertTrue(data["has_generated_rosters"])
+        self.assertEqual(data["player_count"], len(self.victim_players))
+        response = self.client.get(reverse("division-detail", args=[division.id]), {"include": "all"})
+        self.assertEqual(response.status_code, 200)
+        team = next(row for row in response.json()["teams"] if row["id"] == str(self.victim_teams[0].id))
+        self.assertEqual([row["id"] for row in team["roster"]], [str(player.id)])
+
+
+class DraftSafetyTests(CrossTenantTestBase):
+    def setUp(self):
+        super().setUp()
+        self.division = self.victim_division
+        self.players = self.victim_players
+        self.state = DraftService.start_draft(self.division.id, "snake", [t.id for t in self.victim_teams], actor=self.victim_admin)
+
+    def pick(self, index):
+        self.state = DraftService.draft_player(self.state.id, self.players[index].id, self.state.current_team_id, actor=self.victim_admin)
+
+    def test_undo_round_order_and_audit(self):
+        from .transformers import transform_draft_state
+        original = list(self.state.current_round_order)
+        self.pick(0)
+        self.pick(1)
+        self.assertNotEqual(self.state.current_round_order, original)
+        self.state = DraftService.undo_last_pick(self.state.id, expected_pick=2, actor=self.victim_admin)
+        self.assertEqual(self.state.current_round_order, original)
+        log = transform_draft_state(self.state)["audit_log"]
+        self.assertEqual([e["action"] for e in log], ["start", "pick", "pick", "undo"])
+        self.assertTrue(all(e["actor_name"] for e in log))
+        with self.assertRaisesMessage(ValueError, "Pick #2 was already undone or a newer pick exists"):
+            DraftService.undo_last_pick(self.state.id, expected_pick=2)
+        self.assertEqual(self.state.picks.count(), 1)
+
+    def test_double_undo_and_completion(self):
+        self.division.roster_size = 1
+        self.division.save()
+        self.pick(0)
+        self.pick(1)
+        self.assertTrue(self.state.is_draft_complete)
+        self.state = DraftService.undo_last_pick(self.state.id, expected_pick=2)
+        self.division.refresh_from_db()
+        self.assertEqual(self.division.phase, "draft")
+        self.assertIsNone(self.division.completed_at)
+        self.state = DraftService.undo_last_pick(self.state.id, expected_pick=1)
+        self.assertEqual(self.state.picks.count(), 0)
+        with self.assertRaisesMessage(ValueError, "No pick to undo"):
+            DraftService.undo_last_pick(self.state.id)
+
+    def test_age_override_and_pick_check_permission(self):
+        from .services_readiness import RuleCheckError
+        self.division.max_per_age = 1
+        self.division.save()
+        self.pick(0)
+        self.pick(1)
+        with self.assertRaises(RuleCheckError):
+            self.pick(2)
+        self.state = DraftService.draft_player(self.state.id, self.players[2].id, self.state.current_team_id, acknowledge_warnings=True)
+        self.assertTrue(self.state.audit_events.filter(action="pick").last().details["overridden_warnings"])
+        self.client.force_login(self.viewer)
+        response = self.client.post("/api/draft/pick-check/", data=json.dumps({"draft_state_id": str(self.state.id), "player_id": str(self.players[3].id), "team_id": str(self.state.current_team_id)}), content_type="application/json")
+        self.assertEqual(response.status_code, 403)
+
+    def test_acknowledged_warn_only_pick_is_not_an_override(self):
+        from .services_readiness import evaluate_pick
+        self.division.max_per_age = 1
+        self.division.save()
+        self.state.refresh_from_db()
+        warnings = evaluate_pick(self.state, self.players[0], self.state.current_team)
+        self.assertTrue(warnings)
+        self.assertTrue(all(w["level"] == "warn" for w in warnings))
+        self.state = DraftService.draft_player(
+            self.state.id, self.players[0].id, self.state.current_team_id,
+            acknowledge_warnings=True,
+        )
+        event = self.state.audit_events.filter(action="pick").last()
+        self.assertNotIn("overridden_warnings", event.details)
+
+    def test_sibling_warning_and_roster_balance(self):
+        from .services_readiness import evaluate_pick
+        self.players[0].sibling_id = self.players[1].id
+        self.players[0].save()
+        warnings = evaluate_pick(self.state, self.players[0], self.victim_teams[0])
+        self.assertTrue(any(w["code"] == "sibling_lock" for w in warnings))
+        self.players[0].sibling_id = None
+        self.players[0].save()
+        self.players[1].total_score = 100
+        self.players[1].save()
+        self.pick(0)
+        self.pick(1)
+        self.players[2].total_score = 100
+        self.players[2].save()
+        warnings = evaluate_pick(self.state, self.players[2], self.state.current_team)
+        self.assertTrue(any(w["code"] == "roster_balance" for w in warnings))
+
+    def test_readiness_checks(self):
+        from .services_readiness import draft_readiness
+        self.assertTrue(draft_readiness(self.division)["ready"])
+        self.division.team_count = 3
+        self.division.roster_size = 0
+        self.division.max_per_age = 1
+        self.division.save()
+        self.players[0].is_coach_kid = True
+        self.players[0].sibling_id = self.attacker.id
+        self.players[0].save()
+        result = draft_readiness(self.division)
+        errors = {c["id"] for c in result["checks"] if c["level"] == "error"}
+        self.assertTrue({"teams", "roster_size", "player_pool", "age_cap", "coach_kids", "siblings"} <= errors)
+        self.assertFalse(result["ready"])
+
+    def test_readiness_sibling_conflict_and_warnings(self):
+        from .services_readiness import draft_readiness
+        p, sibling = self.players[:2]
+        p.is_coach_kid = sibling.is_coach_kid = True
+        p.coach_team = self.victim_teams[0]
+        sibling.coach_team = self.victim_teams[1]
+        p.sibling_id = sibling.id
+        p.little_league_age = 20
+        p.is_dne = True
+        p.save()
+        sibling.save()
+        checks = {c["id"]: c for c in draft_readiness(self.division)["checks"]}
+        self.assertEqual(checks["siblings"]["level"], "error")
+        for key in ("age_range", "dne", "sibling_links"):
+            self.assertEqual(checks[key]["level"], "warning")
+        sibling.coach_team = self.victim_teams[0]
+        sibling.save()
+        self.division.roster_size = 1
+        self.division.save()
+        checks = {c["id"]: c for c in draft_readiness(self.division)["checks"]}
+        self.assertEqual(checks["coach_kids"]["level"], "error")
+
+    def test_recalculated_undo_restores_snapshot(self):
+        self.state.draft_format = "recalculated"
+        self.state.save()
+        self.players[0].total_score = 100
+        self.players[0].save()
+        original = list(self.state.current_round_order)
+        self.pick(0)
+        self.pick(1)
+        self.assertNotEqual(self.state.current_round_order, original)
+        self.state = DraftService.undo_last_pick(self.state.id)
+        self.assertEqual(self.state.current_round_order, original)
+
+    def test_pick_check_read_only_and_block_response(self):
+        self.division.max_per_age = 1
+        self.division.save()
+        self.pick(0)
+        self.pick(1)
+        self.client.force_login(self.victim_admin)
+        body = json.dumps({"draft_state_id": str(self.state.id), "player_id": str(self.players[2].id), "team_id": str(self.state.current_team_id)})
+        checked = self.client.post("/api/draft/pick-check/", data=body, content_type="application/json")
+        self.assertEqual(checked.status_code, 200)
+        self.assertTrue(any(w["level"] == "block" for w in checked.json()["warnings"]))
+        response = self.client.post("/api/draft/pick/", data=body, content_type="application/json")
+        self.assertEqual(response.status_code, 409)
+        self.assertTrue(response.json()["error"].startswith("Rule check failed:"))
+        self.assertEqual(self.state.picks.count(), 2)

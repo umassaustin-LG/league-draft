@@ -5,8 +5,10 @@ Uses plain Django function-based views (no DRF).
 """
 
 from django.urls import path
+from .views.draft import draft_readiness_view, draft_pick_check
 
-from .views.elevenlabs import elevenlabs_token
+
+from .views.elevenlabs import elevenlabs_token, elevenlabs_status, elevenlabs_speak
 
 from .views import (
     # Auth
@@ -69,6 +71,11 @@ from .views import (
 
 urlpatterns = [
     path("api/elevenlabs/token/", elevenlabs_token, name="elevenlabs-token"),
+    path("api/draft/readiness/<uuid:division_id>/", draft_readiness_view, name="draft-readiness"),
+    path("api/draft/pick-check/", draft_pick_check, name="draft-pick-check"),
+
+    path("api/elevenlabs/status/", elevenlabs_status, name="elevenlabs-status"),
+    path("api/elevenlabs/speak/", elevenlabs_speak, name="elevenlabs-speak"),
     # Health
     path("health", health_view, name="health"),
 

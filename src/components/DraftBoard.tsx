@@ -9,26 +9,39 @@ import {
   Eye,
   EyeOff,
   Trophy,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
-import { DraftState, Team, DivisionAgeRange, Player } from '../types';
+import { DraftState, Team, DivisionAgeRange, Player, PickWarning, DraftPick } from '../types';
+import { getPickWarnings } from '../utils/draftSafety';
 import { getNextPick, calculateDraftOrder } from '../utils/draftOrder';
 import { useViewMode } from '../contexts/ViewContext';
+import { useDraftAnnouncer } from '../hooks/useDraftAnnouncer';
 import { getTeamDisplayName } from '../utils/teamUtils';
 import { DraftBoardPlayerGrid } from './draft/DraftBoardPlayerGrid';
 import { DraftBoardRosterView } from './draft/DraftBoardRosterView';
 
-interface DraftBoardProps {
-  draftState: DraftState;
-  onDraftPlayer: (playerId: string) => void;
+interface DraftControls {
+  onDraftPlayer: (playerId: string, options?: { acknowledgeWarnings?: boolean }) => void;
   onSkipPick: () => void;
-  onUndo: () => void;
+  onUndo: (expectedPick?: number) => void;
   onReset: () => void;
-  enforceAgeLimit: boolean;
-  maxPerAge: number;
-  ageRange?: DivisionAgeRange;
   pendingComplete: boolean;
   onFinalizeDraft: () => void;
   onCancelComplete: () => void;
+}
+
+interface DraftBoardProps {
+  draftState: DraftState;
+  controls?: DraftControls;
+  rosterSize?: number;
+  error?: string | null;
+  pendingRuleWarnings?: { playerId: string; warnings: PickWarning[] } | null;
+  onClearRuleWarnings?: () => void;
+  onConfirmOverride?: () => void;
+  enforceAgeLimit: boolean;
+  maxPerAge: number;
+  ageRange?: DivisionAgeRange;
   // Issue #20: isLoading prop to disable buttons during API calls
   isLoading?: boolean;
   // Mandatory pick error modal
@@ -46,25 +59,31 @@ type PendingAction =
 
 export const DraftBoard = ({
   draftState,
-  onDraftPlayer,
-  onSkipPick,
-  onUndo,
-  onReset,
+  controls: draftControls,
   enforceAgeLimit,
   maxPerAge,
-  ageRange: _ageRange,
-  pendingComplete,
-  onFinalizeDraft,
-  onCancelComplete,
+  ageRange,
+  rosterSize,
+  error,
+  pendingRuleWarnings,
+  onClearRuleWarnings,
+  onConfirmOverride,
   isLoading = false,
   mandatoryPickError,
   onClearMandatoryPickError,
 }: DraftBoardProps) => {
   const viewMode = useViewMode();
   const isPublicView = viewMode === 'public';
+  const controls = isPublicView ? undefined : draftControls;
+  const canRunDraft = !!controls;
+  const announcer = useDraftAnnouncer(draftState, viewMode);
 
-  const [drawerMode, setDrawerMode] = useState<'players' | 'rosters'>('players');
-  const [showScores, setShowScores] = useState(!isPublicView);
+  const [drawerMode, setDrawerMode] = useState<'players' | 'rosters' | 'history'>('players');
+  const [ruleDialog, setRuleDialog] = useState<{ playerId: string; warnings: PickWarning[] } | null>(null);
+  const [overrideAccepted, setOverrideAccepted] = useState(false);
+  const [undoPick, setUndoPick] = useState<DraftPick | null>(null);
+  const [scoresEnabled, setScoresEnabled] = useState(true);
+  const showScores = !isPublicView && scoresEnabled;
   const [showRoundInterstitial, setShowRoundInterstitial] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [interstitialData, setInterstitialData] = useState<{
@@ -75,7 +94,7 @@ export const DraftBoard = ({
   const previousRoundRef = useRef(draftState.currentRound);
 
   useEffect(() => {
-    if (draftState.currentRound > previousRoundRef.current && draftState.currentRound > 1) {
+    if (canRunDraft && draftState.currentRound > previousRoundRef.current && draftState.currentRound > 1) {
       const newOrder = draftState.currentRoundOrder.map((teamId, index) => {
         const team = draftState.teams.find(t => t.id === teamId)!;
         return {
@@ -93,13 +112,37 @@ export const DraftBoard = ({
       setShowRoundInterstitial(true);
     }
     previousRoundRef.current = draftState.currentRound;
-  }, [draftState.currentRound, draftState.currentRoundOrder, draftState.teams]);
+  }, [canRunDraft, draftState.currentRound, draftState.currentRoundOrder, draftState.teams]);
 
   const availablePlayers = draftState.players.filter((p) => !p.isDrafted);
 
   const derivedCurrentTeamId = draftState.currentTeamId ||
     draftState.currentRoundOrder[draftState.currentPickInRound - 1] || null;
   const currentTeam = draftState.teams.find((t) => t.id === derivedCurrentTeamId);
+  const warningsByPlayer: Record<string, PickWarning[]> = {};
+  if (currentTeam) availablePlayers.forEach(player => {
+    warningsByPlayer[player.id] = getPickWarnings(player, currentTeam, draftState.players, draftState.picks, {
+      enforceAgeLimit, maxPerAge, ageRange: ageRange ?? { min: 0, max: 99 },
+      rosterSize: rosterSize ?? Math.ceil(draftState.players.length / draftState.teams.length),
+      teamCount: draftState.teams.length,
+    }, draftState.mandatoryPick?.playerId);
+  });
+  const activeRuleDialog = pendingRuleWarnings ?? ruleDialog;
+  const requestDraft = (playerId: string) => {
+    const warnings = warningsByPlayer[playerId] ?? [];
+    if (warnings.length) {
+      setOverrideAccepted(false);
+      setRuleDialog({ playerId, warnings });
+    } else {
+      const player = draftState.players.find(p => p.id === playerId);
+      if (player) setPendingAction({ kind: 'draft', player });
+    }
+  };
+  const requestUndo = () => setUndoPick(draftState.picks[draftState.picks.length - 1] ?? null);
+  const undoDescription = undoPick ? (undoPick.wasSkipped || !undoPick.playerId
+    ? `Undo skipped pick #${undoPick.pick}`
+    : `Undo pick #${undoPick.pick}: ${draftState.players.find(p => p.id === undoPick.playerId)?.name ?? 'Unknown player'} → ${(() => { const team = draftState.teams.find(t => t.id === undoPick.teamId); return team ? getTeamDisplayName(team) : 'Unknown team'; })()}`) : '';
+  useEffect(() => { setOverrideAccepted(false); }, [pendingRuleWarnings]);
 
   const { round: nextRound, pickInRound: nextPickInRound } = getNextPick(
     draftState.currentRound,
@@ -139,25 +182,20 @@ export const DraftBoard = ({
     setPendingAction({ kind: 'reset' });
   };
 
-  // Grid delegates here when a Draft click would push a team over the age limit.
-  const handleAgeOverrideNeeded = (player: Player, currentCount: number) => {
-    setPendingAction({ kind: 'age-override', player, currentCount });
-  };
-
   const handleConfirmPending = () => {
-    if (!pendingAction) return;
+    if (!controls || !pendingAction || activeRuleDialog || undoPick) return;
     switch (pendingAction.kind) {
       case 'draft':
-        onDraftPlayer(pendingAction.player.id);
+        controls.onDraftPlayer(pendingAction.player.id);
         break;
       case 'age-override':
-        onDraftPlayer(pendingAction.player.id);
+        controls.onDraftPlayer(pendingAction.player.id);
         break;
       case 'skip':
-        onSkipPick();
+        controls.onSkipPick();
         break;
       case 'reset':
-        onReset();
+        controls.onReset();
         break;
     }
     setPendingAction(null);
@@ -175,7 +213,7 @@ export const DraftBoard = ({
   // Global keyboard shortcuts for admins running the draft at speed.
   // Escape cancels any pending confirmation, Enter confirms, Cmd/Ctrl-Z undoes.
   useEffect(() => {
-    if (isPublicView) return;
+    if (!controls) return;
 
     const handler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -205,21 +243,23 @@ export const DraftBoard = ({
         (e.key === 'z' || e.key === 'Z') &&
         !isTyping &&
         !pendingAction &&
+        !activeRuleDialog &&
+        !undoPick &&
         !isLoading &&
         draftState.picks.length > 0
       ) {
         e.preventDefault();
-        onUndo();
+        requestUndo();
       }
     };
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isPublicView, pendingAction, isLoading, draftState.picks.length, onUndo]);
+  }, [controls, pendingAction, isLoading, draftState.picks.length, activeRuleDialog, undoPick]);
 
   // Zone 2 default (On deck) only shows when nothing else is claiming the slot.
-  const showQuickPicks = !draftState.mandatoryPick && !pendingAction && !isPublicView;
+  const showQuickPicks = canRunDraft && !draftState.mandatoryPick && !pendingAction;
 
   const mandatoryPlayerForScoreboard = draftState.mandatoryPick
     ? draftState.players.find((p) => p.id === draftState.mandatoryPick?.playerId)
@@ -228,7 +268,7 @@ export const DraftBoard = ({
   // Build the Zone 2 banner content from whichever state is active.
   // Falls through to On-Deck when nothing's pending.
   const zone2 = (() => {
-    if (draftState.mandatoryPick && !isPublicView) {
+    if (draftState.mandatoryPick && !pendingAction && controls) {
       return {
         label: 'Mandatory pick',
         labelIcon: <AlertCircle className="w-3 h-3" />,
@@ -240,12 +280,12 @@ export const DraftBoard = ({
             : `Sibling of ${draftState.mandatoryPick.siblingName}`,
         primaryLabel: 'Draft',
         onPrimary: () =>
-          mandatoryPlayerForScoreboard && onDraftPlayer(mandatoryPlayerForScoreboard.id),
+          mandatoryPlayerForScoreboard && requestDraft(mandatoryPlayerForScoreboard.id),
         cancellable: false,
       };
     }
 
-    if (pendingAction && !isPublicView) {
+    if (pendingAction && canRunDraft) {
       switch (pendingAction.kind) {
         case 'draft':
           return {
@@ -298,6 +338,28 @@ export const DraftBoard = ({
 
   return (
     <div className="min-h-screen bg-surface p-4">
+      {error && !isPublicView && <p role="alert" className="bg-alert-soft text-alert border border-alert p-3 mb-4 rounded-sharp">{error}</p>}
+      {activeRuleDialog && controls && <Modal maxWidth="md" onDismiss={isLoading ? undefined : () => { setRuleDialog(null); onClearRuleWarnings?.(); }}>
+        <div className="p-6 text-ink">
+          <h2 className="text-xl font-semibold mb-2">Confirm pick: {draftState.players.find(p => p.id === activeRuleDialog.playerId)?.name}</h2>
+          <ul className="space-y-3 my-4">{activeRuleDialog.warnings.map((warning, i) => <li key={i} className={`flex gap-2 text-sm ${warning.level === 'block' ? 'text-alert' : 'text-warn'}`}><AlertCircle className="w-4 h-4 shrink-0 mt-0.5" /><span>{warning.message}</span></li>)}</ul>
+          {activeRuleDialog.warnings.some(w => w.level === 'block') && <label className="flex gap-2 text-sm mb-5"><input type="checkbox" checked={overrideAccepted} onChange={e => setOverrideAccepted(e.target.checked)} />I understand this breaks a league rule</label>}
+          <div className="flex justify-end gap-3">
+            <button disabled={isLoading} onClick={() => { setRuleDialog(null); onClearRuleWarnings?.(); }} className="px-4 py-2 border border-rule rounded-button">Cancel</button>
+            <button disabled={isLoading || (activeRuleDialog.warnings.some(w => w.level === 'block') && !overrideAccepted)} onClick={() => {
+              if (pendingRuleWarnings) onConfirmOverride?.();
+              else controls.onDraftPlayer(activeRuleDialog.playerId, { acknowledgeWarnings: true });
+              setRuleDialog(null);
+            }} className="px-4 py-2 bg-brand text-white rounded-button disabled:opacity-40">{activeRuleDialog.warnings.some(w => w.level === 'block') ? 'Override and draft' : 'Draft'}</button>
+          </div>
+        </div>
+      </Modal>}
+      {undoPick && controls && <Modal maxWidth="md" onDismiss={() => setUndoPick(null)}><div className="p-6 text-ink"><h2 className="text-xl font-semibold mb-4">{undoDescription}</h2><p className="text-sm text-ink-muted mb-5">This action remains in draft history.</p><div className="flex justify-end gap-3"><button className="border border-rule px-4 py-2 rounded-button" onClick={() => setUndoPick(null)}>Cancel</button><button className="bg-brand text-white px-4 py-2 rounded-button" disabled={isLoading} onClick={() => { controls.onUndo(undoPick.pick); setUndoPick(null); }}>Undo pick</button></div></div></Modal>}
+      {announcer.caption && (
+        <div role="status" className="mb-4 border border-rule bg-surface-raised px-6 py-4 text-2xl font-semibold text-ink">
+          {announcer.caption}
+        </div>
+      )}
       {/* Round Completion Interstitial Modal */}
       {showRoundInterstitial && interstitialData && (
         <Modal onDismiss={() => setShowRoundInterstitial(false)} maxWidth="lg">
@@ -355,7 +417,7 @@ export const DraftBoard = ({
 
       <div className="max-w-7xl mx-auto">
         {/* Sticky scoreboard — current pick (hero) | on-deck OR mandatory OR pending | admin */}
-        <div className="sticky top-10 z-40 -mx-4 px-4 pt-0 pb-4 bg-surface">
+        <div className={`sticky ${canRunDraft ? 'top-10' : 'top-0'} z-40 -mx-4 px-4 pt-0 pb-4 bg-surface`}>
           <section className="bg-surface border border-rule rounded-sharp">
             <div className="grid grid-cols-[1.2fr_1.3fr_auto] gap-x-8 items-start px-6 py-5">
 
@@ -436,7 +498,18 @@ export const DraftBoard = ({
 
               {/* Zone 3 — admin / live */}
               <div className="flex items-start gap-1">
-                {!isPublicView ? (
+                {announcer.enabled && (
+                  <button
+                    onClick={announcer.toggleMuted}
+                    aria-label={announcer.muted ? 'Unmute pick announcer' : 'Mute pick announcer'}
+                    aria-pressed={!announcer.muted}
+                    title={announcer.muted ? 'Unmute pick announcer' : 'Mute pick announcer'}
+                    className="text-ink-muted hover:text-ink border border-rule hover:border-rule-strong px-3 py-1.5 rounded-sharp transition-colors"
+                  >
+                    {announcer.muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+                  </button>
+                )}
+                {controls ? (
                   <>
                     {isFinalRound && (
                       <button
@@ -449,7 +522,7 @@ export const DraftBoard = ({
                       </button>
                     )}
                     <button
-                      onClick={onUndo}
+                      onClick={requestUndo}
                       disabled={draftState.picks.length === 0 || isLoading || !!pendingAction}
                       className="text-[11px] uppercase tracking-button font-semibold text-ink-muted hover:text-ink border border-rule hover:border-rule-strong px-3 py-1.5 rounded-sharp flex items-center gap-1.5 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                       title="Undo last pick · ⌘Z"
@@ -469,7 +542,7 @@ export const DraftBoard = ({
                   </>
                 ) : (
                   <div className="font-mono text-[11px] uppercase tracking-label text-brand border border-brand px-2.5 py-1 rounded-sharp">
-                    Live view
+                    Read-only
                   </div>
                 )}
               </div>
@@ -567,10 +640,11 @@ export const DraftBoard = ({
               <Users className="w-3.5 h-3.5" />
               Rosters
             </button>
+            <button onClick={() => setDrawerMode('history')} className={`px-3 py-1.5 rounded-sharp text-xs font-semibold uppercase tracking-button ${drawerMode === 'history' ? 'bg-ink text-surface' : 'text-ink-muted hover:text-ink'}`}>History</button>
           </div>
 
-          <button
-            onClick={() => setShowScores(!showScores)}
+          {!isPublicView && <button
+            onClick={() => setScoresEnabled(enabled => !enabled)}
             className={`flex items-center gap-2 px-3 py-1.5 rounded-sharp text-xs font-semibold uppercase tracking-button transition-colors ${
               showScores ? 'text-ink' : 'text-ink-muted hover:text-ink'
             }`}
@@ -587,7 +661,7 @@ export const DraftBoard = ({
                 Scores hidden
               </>
             )}
-          </button>
+          </button>}
         </div>
 
         {/* Drawer Content */}
@@ -598,16 +672,36 @@ export const DraftBoard = ({
               currentTeamId={derivedCurrentTeamId}
               teams={draftState.teams}
               showScores={showScores}
-              onDraftPlayer={onDraftPlayer}
+              onDraftPlayer={canRunDraft ? requestDraft : undefined}
+              warningsByPlayer={warningsByPlayer}
               mandatoryPick={draftState.mandatoryPick}
               isLoading={isLoading}
               enforceAgeLimit={enforceAgeLimit}
               maxPerAge={maxPerAge}
               currentTeamAgeBreakdown={currentTeam?.ageBreakdown || {}}
-              isPublicView={isPublicView}
-              onQuickPick={showQuickPicks ? (player) => setPendingAction({ kind: 'draft', player }) : undefined}
-              onAgeOverrideNeeded={handleAgeOverrideNeeded}
+              isReadOnly={!canRunDraft}
+              onQuickPick={showQuickPicks ? (player) => requestDraft(player.id) : undefined}
+              onAgeOverrideNeeded={canRunDraft ? (player) => requestDraft(player.id) : undefined}
             />
+          ) : drawerMode === 'history' ? (
+            <section aria-label="Draft history" className="bg-surface border border-rule rounded-sharp text-ink divide-y divide-rule">
+              {!(draftState.auditLog?.length) && <p className="p-5 text-ink-muted">No draft history yet.</p>}
+              {[...(draftState.auditLog ?? [])].reverse().map(event => {
+                const player = draftState.players.find(p => p.id === event.playerId);
+                const team = draftState.teams.find(t => t.id === event.teamId);
+                const tradePlayers = event.action === 'trade' ? [event.details.player1_id, event.details.player2_id].map(id => draftState.players.find(p => p.id === id)?.name ?? 'Unknown player').join(' ↔ ') : null;
+                const tradeTeams = event.action === 'trade' ? [event.details.team1_id, event.details.team2_id].map(id => { const t = draftState.teams.find(t => t.id === id); return t ? getTeamDisplayName(t) : 'Unknown team'; }).join(' ↔ ') : null;
+                return <div key={event.id} className="p-4 flex flex-wrap items-center gap-3 text-sm">
+                  <time className="font-mono text-xs text-ink-muted" dateTime={event.timestamp}>{new Date(event.timestamp).toLocaleTimeString()}</time>
+                  <span className="uppercase font-semibold text-xs">{event.action}</span>
+                  {event.pick != null && <span className="font-mono">Pick #{event.pick}</span>}
+                  {player && <span>{player.name}</span>}{team && <span>→ {getTeamDisplayName(team)}</span>}
+                  {tradePlayers && <span>{tradePlayers} · {tradeTeams}</span>}
+                  {!isPublicView && event.actorName && <span className="text-ink-muted">by {event.actorName}</span>}
+                  {Array.isArray(event.details.overridden_warnings) && event.details.overridden_warnings.length > 0 && <span className="text-alert border border-alert rounded-sharp px-2 py-0.5 text-xs">rule override</span>}
+                </div>;
+              })}
+            </section>
           ) : (
             <DraftBoardRosterView
               teams={draftState.teams}
@@ -625,7 +719,7 @@ export const DraftBoard = ({
       </div>
 
       {/* Mandatory Pick Error Modal */}
-      {mandatoryPickError && draftState.mandatoryPick && (() => {
+      {controls && mandatoryPickError && draftState.mandatoryPick && (() => {
         const mandatoryPlayer = draftState.players.find(p => p.id === draftState.mandatoryPick?.playerId);
         const reason = draftState.mandatoryPick.reason === 'coach-kid' ? "Coach's kid" : 'Sibling requirement';
 
@@ -686,7 +780,7 @@ export const DraftBoard = ({
                 onClick={() => {
                   if (mandatoryPlayer) {
                     onClearMandatoryPickError?.();
-                    onDraftPlayer(mandatoryPlayer.id);
+                    requestDraft(mandatoryPlayer.id);
                   }
                 }}
                 disabled={isLoading}
@@ -700,8 +794,8 @@ export const DraftBoard = ({
       })()}
 
       {/* Draft Complete Confirmation Modal */}
-      {pendingComplete && (
-        <Modal onDismiss={isLoading ? undefined : onCancelComplete} maxWidth="md">
+      {controls?.pendingComplete && (
+        <Modal onDismiss={isLoading ? undefined : controls.onCancelComplete} maxWidth="md">
           <div className="px-6 py-6">
             <div className="flex items-start gap-3 mb-4">
               <Trophy className="w-6 h-6 text-brand flex-shrink-0 mt-0.5" />
@@ -722,14 +816,14 @@ export const DraftBoard = ({
 
           <div className="px-6 py-4 border-t border-rule flex justify-end gap-2">
             <button
-              onClick={onCancelComplete}
+              onClick={controls.onCancelComplete}
               disabled={isLoading}
               className="text-xs font-semibold uppercase tracking-button text-ink-muted hover:text-ink border border-rule hover:border-rule-strong px-4 py-2 rounded-button disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               Back to review
             </button>
             <button
-              onClick={onFinalizeDraft}
+              onClick={controls.onFinalizeDraft}
               disabled={isLoading}
               className="bg-brand hover:bg-brand-strong text-white text-xs font-semibold uppercase tracking-button px-4 py-2 rounded-button disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >

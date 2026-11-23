@@ -8,6 +8,8 @@ the existing API contract.
 
 from typing import Optional
 
+from django.db.models import Count
+
 
 def transform_organization_membership(membership) -> dict:
     """Transform an OrganizationMembership to dict."""
@@ -164,17 +166,26 @@ def transform_draft_state(draft_state) -> dict:
         "mandatory_pick": mandatory_pick,
         "picks": [transform_draft_pick(p) for p in draft_state.picks.all()],
         "trades": [transform_trade(t) for t in draft_state.trades.all()],
+        "audit_log": [{
+            "id": str(e.id), "action": e.action, "round": e.round, "pick": e.pick,
+            "team_id": str(e.team_id) if e.team_id else None,
+            "player_id": str(e.player_id) if e.player_id else None,
+            "actor_name": (f"{e.actor.first_name} {e.actor.last_name}".strip() or e.actor.email) if e.actor else None,
+            "details": e.details, "timestamp": e.timestamp.isoformat(),
+        } for e in draft_state.audit_events.select_related("actor").all()],
     }
 
 
 def transform_division_summary(division) -> dict:
     """Transform a Division to summary dict (for list view)."""
+    counts = division.players.aggregate(total=Count("pk"), assigned=Count("drafted_by_team"))
     result = {
         "id": str(division.id),
         "name": division.name,
         "preset": division.preset,
         "team_count": division.team_count,
-        "player_count": division.players.count(),
+        "player_count": counts["total"],
+        "has_generated_rosters": division.mode == "league-generated" and counts["assigned"] > 0,
         "mode": division.mode,
         "phase": division.phase,
         "created_at": division.created_at.isoformat(),

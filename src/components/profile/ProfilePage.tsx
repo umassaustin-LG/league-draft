@@ -38,7 +38,7 @@ export function ProfilePage({ user, onBack, onUserUpdate }: ProfilePageProps) {
                 Settings
               </h1>
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                Manage your account and league settings
+                {isAdmin ? 'Manage your account and league settings' : 'Manage your profile and view league members'}
               </p>
             </div>
           </div>

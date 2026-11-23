@@ -10,6 +10,24 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+if os.environ.get('SENTRY_DSN'):
+    import sentry_sdk
+    from sentry_sdk.integrations.django import DjangoIntegration
+    from .telemetry import before_send
+
+    sentry_sdk.init(
+        dsn=os.environ['SENTRY_DSN'],
+        environment=os.environ.get('SENTRY_ENVIRONMENT'),
+        integrations=[DjangoIntegration()],
+        send_default_pii=False,
+        traces_sample_rate=0.1,
+        max_request_body_size='never',
+        include_local_variables=False,
+        before_send=before_send,
+        before_send_transaction=before_send,
+        before_breadcrumb=before_send,
+    )
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -149,3 +167,4 @@ PASSWORD_RESET_TIMEOUT = 3600
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
 
 ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
+ELEVENLABS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID") or "JBFqnCBsd6RMkjVDRZzb"

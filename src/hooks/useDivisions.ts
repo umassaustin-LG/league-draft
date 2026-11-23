@@ -8,6 +8,7 @@ import {
 } from '../types';
 import { api, ApiError } from '../api/client';
 import { saveTeamsToApi, savePlayersToApi } from '../api';
+import { hasGeneratedRosters } from '../utils/divisionAccess';
 
 // Validation: A division is complete enough to persist when it has players
 export function isDivisionValid(division: Division | null): boolean {
@@ -29,28 +30,42 @@ export function isDivisionPartiallySetup(division: Division | null): boolean {
   );
 }
 
-export function useDivisions() {
+export function useDivisions(userId?: string) {
   const [, setDivisionIds] = useState<string[]>([]);
   const [summaries, setSummaries] = useState<DivisionSummary[]>([]);
   const [activeDivision, setActiveDivision] = useState<Division | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load divisions on mount
+  // Fetch only with an authenticated session and discard the previous account's data.
   useEffect(() => {
+    let cancelled = false;
+    setActiveDivision(null);
+    setSummaries([]);
+    setDivisionIds([]);
+    setError(null);
+    if (!userId) {
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     api.listDivisions()
       .then((data) => {
+        if (cancelled) return;
         setSummaries(data);
         setDivisionIds(data.map(d => d.id));
         setError(null);
       })
       .catch((err: ApiError) => {
+        if (cancelled) return;
         console.error('Failed to load divisions from API:', err);
         setError('Failed to load divisions');
       })
-      .finally(() => setIsLoading(false));
-  }, []);
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [userId]);
 
   // Check if a division name already exists (case-insensitive)
   // Only check divisions that have players - empty ones will be cleaned up by the backend
@@ -96,6 +111,7 @@ export function useDivisions() {
         mode: division.mode,
         teamCount: division.teamCount,
         playerCount: division.players.length,
+        hasGeneratedRosters: hasGeneratedRosters(division),
         phase: division.phase,
         createdAt: division.createdAt,
         completedAt: division.completedAt,
@@ -175,6 +191,7 @@ export function useDivisions() {
             mode: division.mode,
             teamCount: division.teamCount,
             playerCount: division.players.length,
+            hasGeneratedRosters: hasGeneratedRosters(division),
             phase: division.phase,
             createdAt: division.createdAt,
             completedAt: division.completedAt,

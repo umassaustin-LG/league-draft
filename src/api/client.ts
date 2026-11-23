@@ -4,6 +4,9 @@
  */
 
 import type {
+  DraftAuditEvent,
+  DraftReadiness,
+  PickWarning,
   Division,
   DivisionSummary,
   DivisionPreset,
@@ -102,6 +105,22 @@ function getDefaultOptions(method: string = 'GET'): RequestInit {
   }
 
   return options;
+}
+
+export async function getAnnouncerStatus(signal?: AbortSignal): Promise<{ enabled: boolean }> {
+  const response = await fetch(`${API_BASE_URL}/elevenlabs/status/`, {
+    ...getDefaultOptions(), signal,
+  });
+  if (!response.ok) throw new Error('Announcer unavailable');
+  return response.json();
+}
+
+export async function speakAnnouncement(text: string, signal: AbortSignal): Promise<Blob> {
+  const response = await fetch(`${API_BASE_URL}/elevenlabs/speak/`, {
+    ...getDefaultOptions('POST'), method: 'POST', body: JSON.stringify({ text }), signal,
+  });
+  if (!response.ok) throw new Error('Announcer unavailable');
+  return response.blob();
 }
 
 // -----------------------------------------------------------------------------
@@ -332,6 +351,17 @@ function transformDraftStateFromApi(
     isDraftComplete: data.is_draft_complete as boolean,
     mandatoryPick,
     trades,
+    auditLog: (data.audit_log as Record<string, unknown>[] || []).map((event): DraftAuditEvent => ({
+      id: event.id as string,
+      action: event.action as DraftAuditEvent['action'],
+      round: event.round as number,
+      pick: (event.pick as number | null) ?? undefined,
+      teamId: (event.team_id as string | null) ?? undefined,
+      playerId: (event.player_id as string | null) ?? undefined,
+      actorName: (event.actor_name as string | null) ?? undefined,
+      details: event.details as Record<string, unknown>,
+      timestamp: event.timestamp as string,
+    })),
   };
 }
 
@@ -430,6 +460,7 @@ function transformDivisionSummaryFromApi(data: Record<string, unknown>): Divisio
     // Use safe parsing for numeric fields (Issue #3)
     teamCount: safeParseNumber(data.team_count),
     playerCount: safeParseNumber(data.player_count),
+    hasGeneratedRosters: data.has_generated_rosters === true,
     phase: data.phase as DivisionSummary['phase'],
     createdAt: data.created_at as string,
     // Convert null to undefined (Issue #8)
@@ -988,6 +1019,7 @@ export const api = {
     draftStateId: string;
     playerId: string;
     teamId: string;
+    acknowledgeWarnings?: boolean;
   }): Promise<{ draftState: DraftState; players: Player[]; teams: Team[] }> {
     const response = await fetchWithCSRFRetry(`${API_BASE_URL}/draft/pick/`, {
       ...getDefaultOptions('POST'),
@@ -996,6 +1028,7 @@ export const api = {
         draft_state_id: params.draftStateId,
         player_id: params.playerId,
         team_id: params.teamId,
+        acknowledge_warnings: params.acknowledgeWarnings ?? false,
       }),
     }, true); // Use timeout for draft operations
     const data = await handleResponse<Record<string, unknown>>(response);
@@ -1011,12 +1044,27 @@ export const api = {
     return { draftState, players, teams };
   },
 
-  async undoLastPick(draftStateId: string): Promise<{ draftState: DraftState; players: Player[]; teams: Team[] }> {
+  async getDraftReadiness(divisionId: string): Promise<DraftReadiness> {
+    const response = await fetchWithCSRFRetry(`${API_BASE_URL}/draft/readiness/${divisionId}/`, getDefaultOptions('GET'));
+    return handleResponse<DraftReadiness>(response);
+  },
+
+  async checkPick(params: { draftStateId: string; playerId: string; teamId: string }): Promise<{ warnings: PickWarning[] }> {
+    const response = await fetchWithCSRFRetry(`${API_BASE_URL}/draft/pick-check/`, {
+      ...getDefaultOptions('POST'),
+      method: 'POST',
+      body: JSON.stringify({ draft_state_id: params.draftStateId, player_id: params.playerId, team_id: params.teamId }),
+    });
+    return handleResponse<{ warnings: PickWarning[] }>(response);
+  },
+
+  async undoLastPick(draftStateId: string, expectedPick?: number): Promise<{ draftState: DraftState; players: Player[]; teams: Team[] }> {
     const response = await fetchWithCSRFRetry(`${API_BASE_URL}/draft/undo/`, {
       ...getDefaultOptions('POST'),
       method: 'POST',
       body: JSON.stringify({
         draft_state_id: draftStateId,
+        expected_pick: expectedPick,
       }),
     }, true); // Use timeout for draft operations
     const data = await handleResponse<Record<string, unknown>>(response);

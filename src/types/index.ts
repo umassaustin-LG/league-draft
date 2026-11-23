@@ -234,7 +234,38 @@ export interface DraftConfig {
   draftOrder: string[]; // team IDs in order
 }
 
+export interface DraftAuditEvent {
+  id: string;
+  action: 'start' | 'pick' | 'skip' | 'undo' | 'trade';
+  round: number;
+  pick?: number;
+  teamId?: string;
+  playerId?: string;
+  actorName?: string;
+  details: Record<string, unknown>;
+  timestamp: string;
+}
+
+export interface PickWarning {
+  code: string;
+  level: 'block' | 'warn';
+  message: string;
+}
+
+export interface ReadinessCheck {
+  id: string;
+  level: 'error' | 'warning' | 'ok';
+  title: string;
+  detail: string;
+}
+
+export interface DraftReadiness {
+  ready: boolean;
+  checks: ReadinessCheck[];
+}
+
 export interface DraftState {
+  auditLog?: DraftAuditEvent[];
   id?: string; // Backend draft state ID (for API mode)
   divisionId?: string; // ID of the division this draft belongs to (from API)
   players: Player[];
@@ -411,6 +442,7 @@ export interface DivisionSummary {
   mode: DivisionMode;
   teamCount: number;
   playerCount: number;
+  hasGeneratedRosters: boolean;
   phase: AppPhase;
   createdAt: string;
   completedAt?: string;

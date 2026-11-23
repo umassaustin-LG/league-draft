@@ -1,14 +1,15 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { Search, X, ChevronDown, ChevronUp, Lock, Users } from 'lucide-react';
-import { Player, Team } from '../../types';
+import { Player, Team, PickWarning } from '../../types';
 import { getTeamDisplayName } from '../../utils/teamUtils';
 
 interface DraftBoardPlayerGridProps {
+  warningsByPlayer?: Record<string, PickWarning[]>;
   players: Player[];
   currentTeamId: string | null;
   teams: Team[];
   showScores: boolean;
-  onDraftPlayer: (playerId: string) => void;
+  onDraftPlayer?: (playerId: string) => void;
   mandatoryPick?: {
     playerId: string;
     reason: 'coach-kid' | 'sibling';
@@ -18,7 +19,7 @@ interface DraftBoardPlayerGridProps {
   enforceAgeLimit: boolean;
   maxPerAge: number;
   currentTeamAgeBreakdown: Record<string, number>;
-  isPublicView: boolean;
+  isReadOnly: boolean;
   // When provided, renders the Best-by-Age quick-pick strip above the search.
   // Clicking a quick-pick defers to the scoreboard's pending-confirm flow in the parent.
   onQuickPick?: (player: Player) => void;
@@ -31,6 +32,7 @@ type SortField = 'rank' | 'bib' | 'name' | 'age' | 'school' | 'allstar' | 'sibli
 type SortDirection = 'asc' | 'desc';
 
 export const DraftBoardPlayerGrid = ({
+  warningsByPlayer = {},
   players,
   currentTeamId,
   teams,
@@ -41,7 +43,7 @@ export const DraftBoardPlayerGrid = ({
   enforceAgeLimit,
   maxPerAge,
   currentTeamAgeBreakdown,
-  isPublicView,
+  isReadOnly,
   onQuickPick,
   onAgeOverrideNeeded,
 }: DraftBoardPlayerGridProps) => {
@@ -244,14 +246,14 @@ export const DraftBoardPlayerGrid = ({
       onAgeOverrideNeeded(player, currentCount);
       return;
     }
-    onDraftPlayer(player.id);
+    onDraftPlayer?.(player.id);
   };
 
   // Global keyboard shortcuts scoped to the drawer:
   // `/` focuses search, `Esc` clears it, `Enter` drafts the top eligible player
   // when nothing is typing. Skips when DraftBoard has already claimed the event.
   useEffect(() => {
-    if (isPublicView) return;
+    if (isReadOnly) return;
 
     const handler = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
@@ -297,7 +299,7 @@ export const DraftBoardPlayerGrid = ({
     return () => window.removeEventListener('keydown', handler);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    isPublicView,
+    isReadOnly,
     searchTerm,
     onQuickPick,
     onAgeOverrideNeeded,
@@ -314,7 +316,7 @@ export const DraftBoardPlayerGrid = ({
     let count = 11; // proj, rank, bib, allstar, name, age, school, team, flags, sibling, action
     if (showAllPlayers) count += 1; // drafted round column
     if (showScores) count += 6; // F, H, P, C, R, Total
-    if (isPublicView) count -= 1; // no action column
+    if (isReadOnly) count -= 1; // no action column
     return count;
   };
 
@@ -530,7 +532,7 @@ export const DraftBoardPlayerGrid = ({
               >
                 Sib<SortIndicator field="sibling" />
               </th>
-              {!isPublicView && (
+              {!isReadOnly && (
                 <th className="px-2 py-2 text-center text-xs font-semibold uppercase tracking-label text-ink-muted w-16">
                   Action
                 </th>
@@ -553,7 +555,7 @@ export const DraftBoardPlayerGrid = ({
 
               const rowState = player.isDrafted
                 ? 'bg-surface-2 opacity-50'
-                : isMandatory && !isPublicView
+                : isMandatory && !isReadOnly
                 ? 'bg-brand-soft'
                 : isLockedToOtherTeam
                 ? 'bg-alert-soft opacity-60'
@@ -620,6 +622,10 @@ export const DraftBoardPlayerGrid = ({
                     }`}>
                       {player.name}
                     </span>
+                    {!player.isDrafted && warningsByPlayer[player.id]?.length > 0 && <span
+                      title={warningsByPlayer[player.id].map(w => w.message).join('\n')}
+                      className={`ml-2 text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded-sharp border ${warningsByPlayer[player.id].some(w => w.level === 'block') ? 'text-alert border-alert bg-alert-soft' : 'text-warn border-warn bg-surface-2'}`}
+                    >{warningsByPlayer[player.id].some(w => w.level === 'block') ? 'Rule block' : 'Warning'}</span>}
                   </td>
 
                   {/* Age */}
@@ -739,7 +745,7 @@ export const DraftBoardPlayerGrid = ({
                   </td>
 
                   {/* Action */}
-                  {!isPublicView && (
+                  {!isReadOnly && (
                     <td className="px-2 py-1.5 text-center">
                       {!isRestricted && (
                         <button
