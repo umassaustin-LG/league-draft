@@ -1275,6 +1275,22 @@ class DraftSafetyTests(CrossTenantTestBase):
         self.players[3].refresh_from_db()
         self.assertEqual(self.players[3].drafted_by_team_id, self.victim_teams[1].id)
 
+    def test_excess_sibling_lock_releases_before_original_team_final_pick(self):
+        for index in range(3):
+            self.players[index].sibling_id = self.players[(index + 1) % 3].id
+            self.players[index].save()
+        self.state = DraftService.start_draft(self.division.id, "straight", [t.id for t in self.victim_teams])
+        self.state = DraftService.draft_player(self.state.id, self.players[0].id, self.victim_teams[0].id, acknowledge_warnings=True)
+        self.players[1].refresh_from_db()
+        self.players[2].refresh_from_db()
+        self.assertEqual(self.players[1].locked_to_team_id, self.victim_teams[0].id)
+        self.assertIsNone(self.players[2].locked_to_team_id)
+        with self.assertRaisesMessage(ValueError, "all remaining players must be drafted"):
+            DraftService.skip_pick(self.state.id, self.victim_teams[1].id)
+        self.state = DraftService.draft_player(self.state.id, self.players[2].id, self.victim_teams[1].id, acknowledge_warnings=True)
+        self.players[2].refresh_from_db()
+        self.assertEqual(self.players[2].drafted_by_team_id, self.victim_teams[1].id)
+
     def test_stale_lock_to_full_team_does_not_block_final_pick(self):
         self.reach_last_sibling()
         self.players[3].locked_to_team = self.victim_teams[0]

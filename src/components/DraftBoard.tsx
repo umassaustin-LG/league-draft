@@ -423,7 +423,7 @@ export const DraftBoard = ({
         {siblingState.released.length > 0 && (
           <div role="status" className="mb-4 border border-rule bg-surface p-4 text-ink">
             Sibling rule could not be honored for {siblingState.released.map(player => player.name).join(', ')}:
-            {' '}their sibling’s team has no picks left. They may be drafted by another team; coach assignments still apply.
+            {' '}their sibling’s team does not have enough picks left. They may be drafted by another team; coach assignments still apply.
           </div>
         )}
         {/* Sticky scoreboard — current pick (hero) | on-deck OR mandatory OR pending | admin */}

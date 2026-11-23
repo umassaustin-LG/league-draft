@@ -578,9 +578,13 @@ class DraftService:
     def _release_exhausted_sibling_locks(cls, draft_state: DraftState) -> None:
         from django.db.models import Count
 
-        exhausted = [row["team_id"] for row in draft_state.picks.values("team_id").annotate(count=Count("id"))
-                     if row["count"] >= draft_state.division.roster_size]
-        draft_state.division.players.filter(is_drafted=False, locked_to_team_id__in=exhausted).update(locked_to_team=None)
+        picks = {row["team_id"]: row["count"] for row in draft_state.picks.values("team_id").annotate(count=Count("id"))}
+        by_team = {}
+        for player in draft_state.division.players.filter(is_drafted=False, locked_to_team__isnull=False).order_by("rank", "id"):
+            by_team.setdefault(player.locked_to_team_id, []).append(player.id)
+        for team_id, player_ids in by_team.items():
+            remaining = max(0, draft_state.division.roster_size - picks.get(team_id, 0))
+            draft_state.division.players.filter(id__in=player_ids[remaining:]).update(locked_to_team=None)
 
     @classmethod
     def _lock_sibling_chain(cls, player: Player, team: Team) -> None:

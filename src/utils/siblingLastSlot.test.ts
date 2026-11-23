@@ -45,6 +45,24 @@ const renderBoard = (state: DraftState, rosterSize = 2) => renderToStaticMarkup(
 );
 
 describe('live last-slot sibling recovery', () => {
+  it('releases excess locks immediately, keeps one commitment, and explains backend releases', () => {
+    const state = finalPickState();
+    state.players = [
+      player('root', { isDrafted: true, draftedByTeamId: 'a', siblingId: 'kept' }),
+      player('kept', { siblingId: 'excess', lockedToTeamId: 'a', rank: 1 }),
+      player('excess', { siblingId: 'root', lockedToTeamId: 'a', rank: 2 }), player('single'),
+    ];
+    state.picks = [{ round: 1, pick: 1, teamId: 'a', playerId: 'root' }];
+    state.currentRound = 1;
+    const recovered = getDraftSiblingState(state, 2);
+    expect(recovered.players[1].lockedToTeamId).toBe('a');
+    expect(recovered.players[2].lockedToTeamId).toBeUndefined();
+    expect(recovered.released.map(player => player.id)).toEqual(['excess']);
+    expect(canSkipDraftPick(recovered.players, 'b', 3)).toBe(false);
+    state.players[2].lockedToTeamId = undefined;
+    expect(renderBoard(state)).toContain('Sibling rule could not be honored for excess');
+    expect(renderBoard(state)).toContain('does not have enough picks left');
+  });
   it('releases an exhausted lock without changing saved input or coach assignment', () => {
     const saved = finalPickState();
     saved.players[3].isCoachKid = true;
