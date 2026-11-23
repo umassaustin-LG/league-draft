@@ -1361,6 +1361,13 @@ export function findBalancingTrades(
     playerRequests.get(req.playerId)!.push(req);
   }
 
+  const satisfiedRequests = resolvedRequests.filter(req => {
+    if ((req.status !== 'auto-confirmed' && req.status !== 'user-confirmed') || !req.resolvedTargetId) return false;
+    const teamId = playerTeamMap.get(req.playerId);
+    const targetTeamId = req.requestType === 'coach' ? req.resolvedTargetId : playerTeamMap.get(req.resolvedTargetId);
+    return !!teamId && teamId === targetTeamId;
+  });
+
   // Determine which players are tradeable
   const isPlayerTradeable = (playerId: string): boolean => {
     const player = playerMap.get(playerId);
@@ -1448,6 +1455,11 @@ export function findBalancingTrades(
         for (const lowPlayer of lowTradeable) {
           // Only consider if high player has more points
           if (highPlayer.score <= lowPlayer.score) continue;
+
+          const teamAfterTrade = (playerId: string) => playerId === highPlayer.playerId
+            ? lowTeam.id : playerId === lowPlayer.playerId ? highTeam.id : playerTeamMap.get(playerId);
+          if (satisfiedRequests.some(req => teamAfterTrade(req.playerId) !== (req.requestType === 'coach'
+            ? req.resolvedTargetId : teamAfterTrade(req.resolvedTargetId!)))) continue;
 
           // Calculate new averages after trade
           const newHighTotal = highTeam.currentScore - highPlayer.score + lowPlayer.score;
