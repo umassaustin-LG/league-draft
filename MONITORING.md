@@ -12,13 +12,40 @@ build or run the app. Frontend public ingestion keys are not account/API secrets
 | `SENTRY_DSN` | Django runtime | Enables backend Sentry |
 | `SENTRY_ENVIRONMENT` | Django runtime | Environment label |
 
-Set Vite variables before `npm run build` (or in a local uncommitted `.env.local`).
+Set Vite variables in the frontend build host before `npm run build`.
 They are compiled into the bundle, not read at runtime. The Dockerfile and Compose
 deploy **only Django**, not the frontend: there is no frontend Docker build stage
 to receive build args. Set Vite variables in the separate frontend build environment;
-adding them to the API pod would have no effect. Compose passes backend values from
-the shell/.env. Kubernetes accepts optional `sentry-dsn` in `league-draft-secrets`
-and `sentry-environment` in `league-draft-config`.
+adding them to the API pod would have no effect. The production frontend host is
+not configured in this repository. CircleCI builds and persists `dist` but does not
+deploy it; the frontend host must supply these production-only build-time values:
+
+```dotenv
+VITE_POSTHOG_KEY=phc_sghs577kdfNccVMyU4TUhEsNFr2tgtfYd42E2iTrGjPa
+VITE_POSTHOG_HOST=https://us.i.posthog.com
+VITE_SENTRY_DSN=https://c5690ed1fd56c7d8e761dc44698565b9@o4512472979865600.ingest.us.sentry.io/4512472994086912
+VITE_SENTRY_ENVIRONMENT=production
+```
+
+These are public client ingestion keys, not account/API secrets. Do not put these
+values in a local `.env`/`.env.local` or test environment: local dev and tests must
+remain telemetry-free by default.
+
+The backend production DSN lives in the `league-draft-config` ConfigMap in
+`k8s/deployment.yaml` under `sentry-dsn`; `sentry-environment` is `production`.
+The Deployment reads both using ConfigMap references. Apply this manifest/config
+through the production deployment process; updating only the container image does
+not update ConfigMap data. Compose remains opt-in via shell/.env values, with no
+DSN by default.
+
+## PostHog project configuration
+
+The production project is **league-draft**, project ID **760406**, in **US cloud**.
+Server-side session replay sampling is **25%**, IPs are anonymized, and
+**autocapture, console recording, performance capture, and heatmaps are off**.
+The project is on the **free plan**. If a payment card is ever added, set **$0
+billing limits for every product** before enabling paid usage. Keep the sampling
+and privacy settings below as account-side backstops.
 
 ## Privacy and volume
 
