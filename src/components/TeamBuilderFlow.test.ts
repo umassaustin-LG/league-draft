@@ -16,7 +16,7 @@ const player: Player = {
 };
 const team: Team = {
   id: 't1', teamName: '', headCoach: 'River Coach', assistantCoach: '', draftPosition: 1,
-  roster: [player], totalScore: 10, coachKids: [], ageBreakdown: { '8': 1 },
+  roster: [player, { ...player, id: 'p2', totalScore: 20 }], totalScore: 0, coachKids: [], ageBreakdown: { '8': 2 },
 };
 const division: Division = {
   id: 'division', name: 'AA', preset: 'aa', mode: 'league-generated',
@@ -35,6 +35,8 @@ describe('Team Builder re-entry', () => {
     expect(html).toContain('Adjust &amp; Re-run');
     expect(html).toContain('generate a new request satisfaction report');
     expect(html).not.toContain('Finalize Teams');
+    expect(html.replace(/<!--.*?-->/g, '')).toContain('30.0 pts');
+    expect(html.replace(/<!--.*?-->/g, '')).toContain('Avg: 15.0 pts');
   });
 
   it('returns unassigned players to configuration instead of showing empty results', () => {

@@ -1894,7 +1894,9 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
                 Your saved assignments are shown below. Re-run auto-assignment to generate a new request satisfaction report.
               </p>
             </div>
-            <TeamRosters teams={finalTeams} currentTeamId={null} />
+            <TeamRosters teams={finalTeams.map(team => ({
+              ...team, totalScore: team.roster.reduce((sum, player) => sum + player.totalScore, 0),
+            }))} currentTeamId={null} />
             <button
               onClick={handleRerun}
               className="px-6 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium hover:bg-gray-50 dark:hover:bg-gray-700"
