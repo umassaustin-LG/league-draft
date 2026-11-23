@@ -126,19 +126,6 @@ describe('simulation last-slot siblings', () => {
     expect(result.players.every(p => p.isDrafted)).toBe(true);
   });
 
-  it('preserves conflicting coach assignments without blocking unrelated picks', () => {
-    const teams = [team('a', 1), team('b', 2)];
-    const players = [
-      player('coach-a', { isCoachKid: true, coachTeamId: 'a', siblingId: 'coach-b', projectedRound: 1 }),
-      player('coach-b', { isCoachKid: true, coachTeamId: 'b', siblingId: 'coach-a', projectedRound: 1 }),
-      player('single-one'), player('single-two'),
-    ];
-    const result = runSimulation(players, teams, ['a', 'b'], 'straight', options);
-    expect(result.players[0].draftedByTeamId).toBe('a');
-    expect(result.players[1].draftedByTeamId).toBe('b');
-    expect(result.players.every(p => p.isDrafted)).toBe(true);
-  });
-
   it('reserves a future coach pick before starting a sibling pair', () => {
     const teams = [team('a', 1), team('b', 2), team('c', 3)];
     const players = [

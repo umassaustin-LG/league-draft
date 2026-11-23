@@ -87,8 +87,6 @@ export function runSimulation(
             const group = siblingGroups.get(candidate.id)!;
             const undrafted = group.filter(player => !player.isDrafted);
             if (undrafted.length <= 1) return true;
-            const coachTeams = new Set(group.filter(player => player.isCoachKid && player.coachTeamId).map(player => player.coachTeamId));
-            if (options.includeCoachKids && coachTeams.size > 1) return true;
             owed ??= simPlayers.filter(player => !player.isDrafted && (
               (options.includeCoachKids && player.isCoachKid && player.coachTeamId === teamId)
               || player.lockedToTeamId === teamId
@@ -126,7 +124,7 @@ export function runSimulation(
 
         // Lock siblings to this team (same as real draft)
         if (options.includeSiblings) {
-          lockSiblingToTeam(simPlayers, playerToDraft, team.id, options.includeCoachKids);
+          lockSiblingToTeam(simPlayers, playerToDraft, team.id);
           releaseExhaustedSiblingLocks(simPlayers, remainingPicks);
         }
       }

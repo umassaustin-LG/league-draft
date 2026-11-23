@@ -106,7 +106,7 @@ export function getMandatoryPick(
   // Check for sibling requirements
   if (options.includeSiblings) {
     const siblingToDraft = players.find((p) => {
-      if (p.isDrafted || !p.siblingId || (options.includeCoachKids && p.isCoachKid && p.coachTeamId && p.coachTeamId !== teamId)) return false;
+      if (p.isDrafted || !p.siblingId) return false;
 
       // If locked to this team, must draft in their lockedToRound or projectedRound
       if (p.lockedToTeamId === teamId) {
@@ -157,8 +157,8 @@ export function getMandatoryPick(
         (p) =>
           !p.isDrafted &&
           p.lockedToTeamId === teamId &&
-          // Coach assignments take precedence over sibling locks.
-          !(options.includeCoachKids && p.isCoachKid && p.coachTeamId)
+          // Exclude coach's kids already counted
+          !(p.isCoachKid && p.coachTeamId === teamId)
       );
       lockedSiblings.forEach(p => allMandatory.push({ player: p, reason: 'sibling' }));
     }
@@ -196,8 +196,7 @@ export function getMandatoryPick(
 export function lockSiblingToTeam(
   players: Player[],
   draftedPlayer: Player,
-  teamId: string,
-  includeCoachKids = true
+  teamId: string
 ): void {
   // Track which players we've already processed to avoid infinite loops
   const processed = new Set<string>([draftedPlayer.id]);
@@ -210,7 +209,7 @@ export function lockSiblingToTeam(
     if (current.siblingId) {
       const sibling = players.find(p => p.id === current.siblingId);
       if (sibling && !sibling.isDrafted && !processed.has(sibling.id)) {
-        if (!includeCoachKids || !sibling.isCoachKid || !sibling.coachTeamId || sibling.coachTeamId === teamId) sibling.lockedToTeamId = teamId;
+        sibling.lockedToTeamId = teamId;
         processed.add(sibling.id);
         toProcess.push(sibling); // Follow the chain
       }
@@ -219,7 +218,7 @@ export function lockSiblingToTeam(
     // Also check for any players whose siblingId points to current (reverse direction)
     players.forEach(p => {
       if (p.siblingId === current.id && !p.isDrafted && !processed.has(p.id)) {
-        if (!includeCoachKids || !p.isCoachKid || !p.coachTeamId || p.coachTeamId === teamId) p.lockedToTeamId = teamId;
+        p.lockedToTeamId = teamId;
         processed.add(p.id);
         toProcess.push(p); // Follow the chain
       }

@@ -1296,22 +1296,12 @@ class DraftSafetyTests(CrossTenantTestBase):
         self.assertEqual(self.players[3].coach_team_id, self.victim_teams[0].id)
         self.assertFalse(self.players[3].is_drafted)
 
-    def test_normal_sibling_lock_and_coach_assignment_are_preserved(self):
+    def test_normal_sibling_lock_is_preserved(self):
         self.players[0].sibling_id = self.players[1].id
         self.players[0].save()
         self.pick(0)
         self.players[1].refresh_from_db()
         self.assertEqual(self.players[1].locked_to_team_id, self.victim_teams[0].id)
-        self.state = DraftService.undo_last_pick(self.state.id)
-        self.players[1].is_coach_kid = True
-        self.players[1].coach_team = self.victim_teams[1]
-        self.players[1].projected_round = 1
-        self.players[1].locked_to_team = None
-        self.players[1].save()
-        self.pick(0)
-        self.players[1].refresh_from_db()
-        self.assertIsNone(self.players[1].locked_to_team_id)
-        self.assertEqual(self.state.mandatory_player_id, self.players[1].id)
 
     def test_skip_remains_blocked_when_a_player_can_be_drafted(self):
         with self.assertRaisesMessage(ValueError, "all remaining players must be drafted"):

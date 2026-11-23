@@ -604,9 +604,8 @@ class DraftService:
                     id=current.sibling_id, division=division, is_drafted=False
                 ).first()
                 if sibling:
-                    if not sibling.is_coach_kid or not sibling.coach_team_id or sibling.coach_team_id == team.id:
-                        sibling.locked_to_team = team
-                        sibling.save()
+                    sibling.locked_to_team = team
+                    sibling.save()
                     processed_ids.add(sibling.id)
                     to_process.append(sibling)
 
@@ -616,9 +615,8 @@ class DraftService:
             ).exclude(id__in=processed_ids)
 
             for sibling in reverse_siblings:
-                if not sibling.is_coach_kid or not sibling.coach_team_id or sibling.coach_team_id == team.id:
-                    sibling.locked_to_team = team
-                    sibling.save()
+                sibling.locked_to_team = team
+                sibling.save()
                 processed_ids.add(sibling.id)
                 to_process.append(sibling)
 
