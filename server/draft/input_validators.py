@@ -583,6 +583,27 @@ def validate_player_data(data: Dict[str, Any]) -> Tuple[Optional[Dict], Optional
     if "is_drafted" in data:
         cleaned["is_drafted"] = bool(data["is_drafted"])
 
+    for field in ["coach_request", "school"]:
+        if field in data:
+            if not isinstance(data[field], str) or len(data[field]) > 200:
+                errors[field] = ["Must be a string of 200 characters or less"]
+            else:
+                cleaned[field] = data[field]
+    if "teammate_requests" in data:
+        requests = data["teammate_requests"]
+        if not isinstance(requests, list) or any(not isinstance(value, str) for value in requests):
+            errors["teammate_requests"] = ["Must be a list of names"]
+        else:
+            cleaned["teammate_requests"] = requests
+    if "grade" in data:
+        if data["grade"] is not None and (type(data["grade"]) is not int or not 0 <= data["grade"] <= 12):
+            errors["grade"] = ["Must be a grade between 0 and 12"]
+        else:
+            cleaned["grade"] = data["grade"]
+
+    if errors:
+        return None, errors
+
     return cleaned, None
 
 

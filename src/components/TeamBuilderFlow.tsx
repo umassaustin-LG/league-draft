@@ -423,9 +423,9 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
         bib: evalPlayer.bib,
         firstName: evalPlayer.firstName,
         lastName: evalPlayer.lastName,
-        coachRequest: regPlayer?.coachRequest,
-        teammateRequests: regPlayer?.teammateRequests,
-        school: regPlayer?.school,
+        coachRequest: regPlayer?.coachRequest ?? evalPlayer.coachRequest,
+        teammateRequests: regPlayer?.teammateRequests ?? evalPlayer.teammateRequests,
+        school: regPlayer?.school ?? evalPlayer.school,
       };
     });
 
@@ -556,10 +556,10 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
         littleLeagueAge: regPlayer?.littleLeagueAge ?? evalPlayer.littleLeagueAge,
         // Remap coach team ID to actual division team ID
         coachTeamId: remappedCoachTeamId,
-        coachRequest: normalized?.rawCoachRequest || regPlayer?.coachRequest,
-        teammateRequests: normalized?.rawTeammateRequests || regPlayer?.teammateRequests,
-        school: normalized?.normalizedSchool || regPlayer?.school,
-        grade: regPlayer?.grade ?? undefined,
+        coachRequest: normalized?.rawCoachRequest ?? regPlayer?.coachRequest ?? evalPlayer.coachRequest,
+        teammateRequests: normalized?.rawTeammateRequests ?? regPlayer?.teammateRequests ?? evalPlayer.teammateRequests,
+        school: normalized?.normalizedSchool ?? regPlayer?.school ?? evalPlayer.school,
+        grade: regPlayer?.grade ?? evalPlayer.grade,
         // Use pre-resolved values from normalization
         resolvedCoachTeamId: normalized?.resolvedCoachTeamId || null,
         resolvedTeammateIds: normalized?.resolvedTeammateIds || [],
@@ -701,9 +701,13 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
   // -----------------------------------------------------------------------------
 
   const handleRerun = useCallback(() => {
-    setStep('generate');
+    if (!algorithmResult) {
+      handleProceedToConfirmRequests();
+    } else {
+      setStep('generate');
+    }
     setAlgorithmResult(null);
-  }, []);
+  }, [algorithmResult, handleProceedToConfirmRequests]);
 
   const handleFinalize = useCallback(() => {
     if (onComplete && algorithmResult) {
