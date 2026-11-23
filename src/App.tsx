@@ -183,6 +183,8 @@ function App() {
   useEffect(() => {
     setDivisionStateLoaded(false);
     isUpdatingPhase.current = false;
+    setCSVData(null);
+    setDualCSVVerification(null);
   }, [activeDivision?.id]);
 
   // Mark division state as loaded after loadDivisionState runs
@@ -276,6 +278,7 @@ function App() {
 
   // Handle CSV parsing
   const handleCSVParsed = (parsedData: ParsedCSVData) => {
+    setDualCSVVerification(null);
     setCSVData(parsedData);
   };
 
@@ -634,6 +637,7 @@ function App() {
     clearActiveDivision();
     setMode('selector');
     setCSVData(null);
+    setDualCSVVerification(null);
     setImportMode(null);
   };
 
