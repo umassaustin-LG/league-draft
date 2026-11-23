@@ -1,0 +1,165 @@
+import { describe, expect, it, vi } from 'vitest';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { DraftBoard } from '../components/DraftBoard';
+import { DraftState, Player, Team } from '../types';
+import { canSkipDraftPick, getBestAvailable, getDraftSiblingState, getMandatoryPick, lockSiblingToTeam, releaseExhaustedSiblingLocks } from './draftLogic';
+import { runSimulation } from './simulation';
+
+const player = (id: string, overrides: Partial<Player> = {}): Player => ({
+  id, bib: id, name: id, firstName: id, lastName: '',
+  fieldScore: 0, throwScore: 0, hitPower: 0, hitForm: 0, hitContact: 0,
+  pitchingStrength: 0, pitchingForm: 0, catchScore: 0, runningScore: 0,
+  fieldingSubtotal: 0, hittingSubtotal: 0, pitchingSubtotal: 0,
+  subjectiveTotal: 0, objectiveTotal: 0, officialAdjust: 0,
+  totalScore: 10, rank: 1, projectedRound: 2, littleLeagueAge: 9,
+  birthday: '', isAllStar: false, isDNE: false, isCoachKid: false, isDrafted: false,
+  ...overrides,
+});
+const team = (id: string, draftPosition: number): Team => ({
+  id, draftPosition, teamName: '', headCoach: '', assistantCoach: '',
+  roster: [], totalScore: 0, coachKids: [], ageBreakdown: {},
+});
+const finalPickState = (): DraftState => ({
+  players: [
+    player('one', { isDrafted: true, draftedByTeamId: 'a' }),
+    player('two', { isDrafted: true, draftedByTeamId: 'b' }),
+    player('first-sibling', { siblingId: 'last-sibling', isDrafted: true, draftedByTeamId: 'a' }),
+    player('last-sibling', { siblingId: 'first-sibling', lockedToTeamId: 'a' }),
+  ],
+  teams: [team('a', 1), team('b', 2)],
+  draftFormat: 'straight', draftOrder: ['a', 'b'], currentRoundOrder: ['a', 'b'],
+  picks: [
+    { round: 1, pick: 1, teamId: 'a', playerId: 'one' },
+    { round: 1, pick: 2, teamId: 'b', playerId: 'two' },
+    { round: 2, pick: 3, teamId: 'a', playerId: 'first-sibling' },
+  ],
+  currentRound: 2, currentPickInRound: 2, currentTeamId: 'b', isDraftComplete: false, trades: [],
+});
+const controls = {
+  onDraftPlayer: vi.fn(), onSkipPick: vi.fn(), onUndo: vi.fn(), onReset: vi.fn(),
+  pendingComplete: false, onFinalizeDraft: vi.fn(), onCancelComplete: vi.fn(),
+};
+const renderBoard = (state: DraftState, rosterSize = 2) => renderToStaticMarkup(
+  createElement(DraftBoard, { draftState: state, controls, rosterSize, enforceAgeLimit: false, maxPerAge: 0 }),
+);
+
+describe('live last-slot sibling recovery', () => {
+  it('releases an exhausted lock without changing saved input or coach assignment', () => {
+    const saved = finalPickState();
+    saved.players[3].isCoachKid = true;
+    saved.players[3].coachTeamId = 'b';
+    const { players, released } = getDraftSiblingState(saved, 2);
+    expect(players[3].lockedToTeamId).toBeUndefined();
+    expect(players[3].coachTeamId).toBe('b');
+    expect(saved.players[3].lockedToTeamId).toBe('a');
+    expect(released.map(p => p.id)).toEqual(['last-sibling']);
+    expect(getBestAvailable(players, 'b')?.id).toBe('last-sibling');
+    expect(getBestAvailable(players, 'a')).toBeNull();
+  });
+
+  it('keeps a sibling lock and mandatory pick while the team has space', () => {
+    const players = [player('first', { isDrafted: true }), player('second', { siblingId: 'first' })];
+    lockSiblingToTeam(players, players[0], 'a');
+    releaseExhaustedSiblingLocks(players, { a: 1, b: 1 });
+    expect(getBestAvailable(players, 'b')).toBeNull();
+    expect(getMandatoryPick(players, 'a', 2)?.player.id).toBe('second');
+  });
+
+  it('renders a Draft button and visible release note at the formerly stuck final pick', () => {
+    const html = renderBoard(finalPickState());
+    expect(html).toContain('Sibling rule could not be honored for last-sibling');
+    expect(html).toMatch(/<button[^>]*>Draft<\/button>/);
+    expect(html).not.toContain('Locked to Team 1');
+  });
+
+  it('allows emergency skip before the final round when only another coach’s kid remains', () => {
+    const state = finalPickState();
+    state.players[3].isCoachKid = true;
+    state.players[3].coachTeamId = 'a';
+    state.currentRound = 1;
+    const html = renderBoard(state, 3);
+    const skipButton = html.match(/<button[^>]*title="Skip this team&#x27;s pick"[^>]*>/)?.[0];
+    expect(skipButton).toBeDefined();
+    expect(skipButton).not.toContain(' disabled=');
+    expect(html).not.toMatch(/<button[^>]*>Draft<\/button>/);
+  });
+
+  it('does not permit skipping a full draft when a player is draftable; handles empty pools', () => {
+    expect(canSkipDraftPick([player('single')], 'a', 1)).toBe(false);
+    expect(canSkipDraftPick([], 'a', 1)).toBe(true);
+    expect(getDraftSiblingState({ ...finalPickState(), players: [], picks: [] }, 2).released).toEqual([]);
+  });
+
+  it('allows skipping an impossible mandatory pick but not a draftable coach kid', () => {
+    const players = [player('mandatory', { isCoachKid: true, coachTeamId: 'b' }), player('ordinary')];
+    expect(canSkipDraftPick(players, 'a', 2, 'mandatory')).toBe(true);
+    expect(canSkipDraftPick(players, 'b', 3, 'mandatory')).toBe(false);
+  });
+});
+
+describe('simulation last-slot siblings', () => {
+  const options = { includeCoachKids: true, includeSiblings: true };
+
+  it.each(['straight', 'snake', 'recalculated'] as const)('assigns all 10 players across 5 teams (%s)', format => {
+    const teams = Array.from({ length: 5 }, (_, i) => team(`t${i}`, i + 1));
+    const players = Array.from({ length: 10 }, (_, i) => player(`p${i}`, { totalScore: 100 - i }));
+    players[5].siblingId = players[6].id;
+    players[6].siblingId = players[5].id;
+    const result = runSimulation(players, teams, teams.map(t => t.id), format, options);
+    expect(result.players.every(p => p.isDrafted)).toBe(true);
+    expect(result.teams.map(t => t.roster.length)).toEqual([2, 2, 2, 2, 2]);
+    expect(result.players.find(p => p.draftedAtPick === 6)?.id).toBe('p7');
+    expect(players.every(p => !p.isDrafted)).toBe(true);
+    expect(teams.every(t => t.roster.length === 0)).toBe(true);
+  });
+
+  it('keeps a normal pair together when space permits', () => {
+    const teams = [team('a', 1), team('b', 2)];
+    const players = [
+      player('first', { totalScore: 100, siblingId: 'second', projectedRound: 1 }),
+      player('second', { totalScore: 80, siblingId: 'first' }),
+      player('single-one', { totalScore: 90 }), player('single-two', { totalScore: 70 }),
+    ];
+    const result = runSimulation(players, teams, ['a', 'b'], 'snake', options);
+    expect(result.players[0].draftedByTeamId).toBe(result.players[1].draftedByTeamId);
+    expect(result.players.every(p => p.isDrafted)).toBe(true);
+  });
+
+  it('preserves conflicting coach assignments without blocking unrelated picks', () => {
+    const teams = [team('a', 1), team('b', 2)];
+    const players = [
+      player('coach-a', { isCoachKid: true, coachTeamId: 'a', siblingId: 'coach-b', projectedRound: 1 }),
+      player('coach-b', { isCoachKid: true, coachTeamId: 'b', siblingId: 'coach-a', projectedRound: 1 }),
+      player('single-one'), player('single-two'),
+    ];
+    const result = runSimulation(players, teams, ['a', 'b'], 'straight', options);
+    expect(result.players[0].draftedByTeamId).toBe('a');
+    expect(result.players[1].draftedByTeamId).toBe('b');
+    expect(result.players.every(p => p.isDrafted)).toBe(true);
+  });
+
+  it('reserves a future coach pick before starting a sibling pair', () => {
+    const teams = [team('a', 1), team('b', 2), team('c', 3)];
+    const players = [
+      player('first', { totalScore: 100, siblingId: 'second' }),
+      player('second', { totalScore: 90, siblingId: 'first' }),
+      player('single-one', { totalScore: 80 }), player('single-two', { totalScore: 70 }),
+      player('single-three', { totalScore: 60 }),
+      player('coach-a', { totalScore: 0, isCoachKid: true, coachTeamId: 'a' }),
+    ];
+    const result = runSimulation(players, teams, ['a', 'b', 'c'], 'straight', options);
+    expect(result.players.every(p => p.isDrafted)).toBe(true);
+    expect(result.players[5].draftedByTeamId).toBe('a');
+    expect(result.players[0].draftedByTeamId).toBe(result.players[1].draftedByTeamId);
+  });
+
+  it('handles empty inputs and disabled rules', () => {
+    expect(runSimulation([], [team('a', 1)], ['a'], 'straight', options).players).toEqual([]);
+    const players = [player('a', { siblingId: 'b' }), player('b', { siblingId: 'a' })];
+    const result = runSimulation(players, [team('a', 1), team('b', 2)], ['a', 'b'], 'straight', {
+      includeCoachKids: false, includeSiblings: false,
+    });
+    expect(result.players.every(p => p.isDrafted)).toBe(true);
+  });
+});

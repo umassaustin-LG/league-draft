@@ -1,6 +1,6 @@
 import { Player, Team, DraftFormat } from '../types';
 import { calculateDraftOrder } from './draftOrder';
-import { getMandatoryPick, lockSiblingToTeam, getBestAvailable } from './draftLogic';
+import { getMandatoryPick, lockSiblingToTeam, getBestAvailable, getSiblingGroups, releaseExhaustedSiblingLocks } from './draftLogic';
 
 export interface SimulationOptions {
   includeCoachKids: boolean;
@@ -50,6 +50,9 @@ export function runSimulation(
   // Track picks made by each team
   const teamPicksMade: Record<string, number> = {};
   simTeams.forEach(t => { teamPicksMade[t.id] = 0; });
+  const remainingPicks = Object.fromEntries(simTeams.map(team => [team.id, totalRounds]));
+  const siblingGroups = getSiblingGroups(simPlayers);
+  const rankedPlayers = [...simPlayers].sort((a, b) => b.totalScore - a.totalScore);
 
   for (let round = 1; round <= totalRounds; round++) {
     // USE THE SAME calculateDraftOrder function as real draft
@@ -78,7 +81,30 @@ export function runSimulation(
       } else {
         // USE THE SAME getBestAvailable function - pass teamId and options to respect checkbox settings
         playerToDraft = getBestAvailable(simPlayers, teamId, options);
+        if (options.includeSiblings && playerToDraft) {
+          let owed: Player[] | undefined;
+          const fits = (candidate: Player) => {
+            const group = siblingGroups.get(candidate.id)!;
+            const undrafted = group.filter(player => !player.isDrafted);
+            if (undrafted.length <= 1) return true;
+            const coachTeams = new Set(group.filter(player => player.isCoachKid && player.coachTeamId).map(player => player.coachTeamId));
+            if (options.includeCoachKids && coachTeams.size > 1) return true;
+            owed ??= simPlayers.filter(player => !player.isDrafted && (
+              (options.includeCoachKids && player.isCoachKid && player.coachTeamId === teamId)
+              || player.lockedToTeamId === teamId
+            ));
+            return new Set([...undrafted, ...owed].map(player => player.id)).size <= remainingPicks[teamId];
+          };
+          if (!fits(playerToDraft)) {
+            playerToDraft = rankedPlayers.find(player => !player.isDrafted
+              && !(options.includeCoachKids && player.isCoachKid && player.coachTeamId && player.coachTeamId !== teamId)
+              && !(player.lockedToTeamId && player.lockedToTeamId !== teamId)
+              && fits(player)) || playerToDraft;
+          }
+        }
       }
+
+      remainingPicks[teamId]--;
 
       if (playerToDraft) {
         overallPick++;
@@ -100,7 +126,8 @@ export function runSimulation(
 
         // Lock siblings to this team (same as real draft)
         if (options.includeSiblings) {
-          lockSiblingToTeam(simPlayers, playerToDraft, team.id);
+          lockSiblingToTeam(simPlayers, playerToDraft, team.id, options.includeCoachKids);
+          releaseExhaustedSiblingLocks(simPlayers, remainingPicks);
         }
       }
     }
