@@ -17,6 +17,7 @@ import { RegistrationRecord } from '../types/evaluation';
 import { EvaluationImport } from './evaluation';
 import { NameMatchResolver, TeamBuilderResults, RequestConfirmation, TradeSuggestions } from './teamBuilder';
 import { TradeModal } from './TradeModal';
+import { TeamRosters } from './TeamRosters';
 import {
   runTeamBuilderAlgorithm,
   runRequestsFirstAlgorithm,
@@ -1873,6 +1874,23 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
         )}
 
         {/* Step 6: Results */}
+        {step === 'results' && !algorithmResult && (
+          <div className="space-y-6">
+            <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-4">
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Saved team rosters</h2>
+              <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                Your saved assignments are shown below. Re-run auto-assignment to generate a new request satisfaction report.
+              </p>
+            </div>
+            <TeamRosters teams={finalTeams} currentTeamId={null} />
+            <button
+              onClick={handleRerun}
+              className="px-6 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium hover:bg-gray-50 dark:hover:bg-gray-700"
+            >
+              Adjust &amp; Re-run
+            </button>
+          </div>
+        )}
         {step === 'results' && algorithmResult && (
           <div className="space-y-6">
             <TeamBuilderResults
