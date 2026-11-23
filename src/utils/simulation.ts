@@ -51,6 +51,57 @@ export function runSimulation(
   const teamPicksMade: Record<string, number> = {};
   simTeams.forEach(t => { teamPicksMade[t.id] = 0; });
 
+  const siblingGroups: Player[][] = [];
+  const grouped = new Set<string>();
+  for (const player of simPlayers) {
+    if (grouped.has(player.id)) continue;
+    const group = [player];
+    grouped.add(player.id);
+    for (let i = 0; i < group.length; i++) {
+      for (const sibling of simPlayers) {
+        if (!grouped.has(sibling.id) && (sibling.siblingId === group[i].id || group[i].siblingId === sibling.id)) {
+          grouped.add(sibling.id);
+          group.push(sibling);
+        }
+      }
+    }
+    siblingGroups.push(group);
+  }
+
+  const preservesSiblingCapacity = (candidate: Player, teamId: string): boolean => {
+    const capacity = simTeams.map(team => totalRounds - teamPicksMade[team.id] - Number(team.id === teamId));
+    const pending = siblingGroups.map(group => {
+      const remaining = group.filter(player => !player.isDrafted && player.id !== candidate.id);
+      const locks = new Set(remaining.flatMap(player => [
+        player.lockedToTeamId,
+        options.includeCoachKids && player.isCoachKid ? player.coachTeamId : undefined,
+      ]).filter((id): id is string => !!id));
+      if (group.some(player => player.id === candidate.id)) locks.add(teamId);
+      return { count: remaining.length, locks: [...locks] };
+    }).filter(group => group.count > 0 && (group.count > 1 || group.locks.length > 0))
+      .sort((a, b) => b.locks.length - a.locks.length || b.count - a.count);
+    const failed = new Set<string>();
+    const place = (index: number): boolean => {
+      if (index === pending.length) return true;
+      const key = `${index}:${capacity.join(',')}`;
+      if (failed.has(key)) return false;
+      const group = pending[index];
+      if (group.locks.length > 1) return false;
+      const tried = new Set<number>();
+      for (let i = 0; i < simTeams.length; i++) {
+        if (group.locks.length && group.locks[0] !== simTeams[i].id) continue;
+        if (capacity[i] < group.count || (!group.locks.length && tried.has(capacity[i]))) continue;
+        tried.add(capacity[i]);
+        capacity[i] -= group.count;
+        if (place(index + 1)) return true;
+        capacity[i] += group.count;
+      }
+      failed.add(key);
+      return false;
+    };
+    return place(0);
+  };
+
   for (let round = 1; round <= totalRounds; round++) {
     // USE THE SAME calculateDraftOrder function as real draft
     const roundOrder = calculateDraftOrder(simTeams, round, draftFormat, draftOrder);
@@ -77,7 +128,10 @@ export function runSimulation(
         playerToDraft = mandatoryResult.player;
       } else {
         // USE THE SAME getBestAvailable function - pass teamId and options to respect checkbox settings
-        playerToDraft = getBestAvailable(simPlayers, teamId, options);
+        const eligible = options.includeSiblings
+          ? simPlayers.filter(player => !player.isDrafted && preservesSiblingCapacity(player, teamId))
+          : simPlayers;
+        playerToDraft = getBestAvailable(eligible, teamId, options);
       }
 
       if (playerToDraft) {

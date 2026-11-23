@@ -1325,6 +1325,18 @@ class DraftSafetyTests(CrossTenantTestBase):
         warnings = evaluate_pick(self.state, self.players[2], self.state.current_team)
         self.assertTrue(any(w["code"] == "roster_balance" for w in warnings))
 
+    def test_optional_sibling_pick_is_blocked_in_last_roster_slot(self):
+        from .services_readiness import RuleCheckError
+        self.division.roster_size = 1
+        self.division.save()
+        self.players[0].sibling_id = self.players[1].id
+        self.players[0].save()
+        with self.assertRaises(RuleCheckError) as raised:
+            self.pick(0)
+        self.assertTrue(any(w["code"] == "sibling_capacity" and w["level"] == "block" for w in raised.exception.warnings))
+        self.players[0].refresh_from_db()
+        self.assertFalse(self.players[0].is_drafted)
+
     def test_readiness_checks(self):
         from .services_readiness import draft_readiness
         self.assertTrue(draft_readiness(self.division)["ready"])
