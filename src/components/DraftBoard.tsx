@@ -125,6 +125,7 @@ export const DraftBoard = ({
       enforceAgeLimit, maxPerAge, ageRange: ageRange ?? { min: 0, max: 99 },
       rosterSize: rosterSize ?? Math.ceil(draftState.players.length / draftState.teams.length),
       teamCount: draftState.teams.length,
+      teams: draftState.teams,
     }, draftState.mandatoryPick?.playerId);
   });
   const activeRuleDialog = pendingRuleWarnings ?? ruleDialog;

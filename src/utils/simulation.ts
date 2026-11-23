@@ -1,6 +1,6 @@
 import { Player, Team, DraftFormat } from '../types';
 import { calculateDraftOrder } from './draftOrder';
-import { getMandatoryPick, lockSiblingToTeam, getBestAvailable } from './draftLogic';
+import { getMandatoryPick, lockSiblingToTeam, getBestAvailable, getSiblingGroups } from './draftLogic';
 
 export interface SimulationOptions {
   includeCoachKids: boolean;
@@ -35,6 +35,7 @@ export function runSimulation(
     p.draftedByTeamId = undefined;
     p.draftedInRound = undefined;
     p.draftedAtPick = undefined;
+    if (options.includeCoachKids && p.isCoachKid && p.coachTeamId) p.lockedToTeamId = undefined;
     // Note: Don't reset lockedToTeamId - it may have been set for siblings of coach's kids
   });
 
@@ -45,6 +46,22 @@ export function runSimulation(
   });
 
   const totalRounds = Math.ceil(simPlayers.length / simTeams.length);
+  if (options.includeCoachKids && options.includeSiblings) {
+    const groups = new Set(getSiblingGroups(simPlayers).values());
+    for (const group of groups) {
+      const coachTeams = new Set(group.filter(player => player.isCoachKid && player.coachTeamId).map(player => player.coachTeamId!));
+      if (coachTeams.size !== 1) continue;
+      const coachTeamId = [...coachTeams][0];
+      if (!simTeams.some(team => team.id === coachTeamId)) continue;
+      const owed = simPlayers.filter(player => (player.isCoachKid && player.coachTeamId === coachTeamId)
+        || player.lockedToTeamId === coachTeamId);
+      if (new Set([...group, ...owed].map(player => player.id)).size <= totalRounds) {
+        for (const player of group) {
+          if (!player.isCoachKid || !player.coachTeamId) player.lockedToTeamId = coachTeamId;
+        }
+      }
+    }
+  }
   let overallPick = 0;
 
   // Track picks made by each team
@@ -100,7 +117,7 @@ export function runSimulation(
 
         // Lock siblings to this team (same as real draft)
         if (options.includeSiblings) {
-          lockSiblingToTeam(simPlayers, playerToDraft, team.id);
+          lockSiblingToTeam(simPlayers, playerToDraft, team.id, options.includeCoachKids);
         }
       }
     }

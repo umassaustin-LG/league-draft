@@ -59,8 +59,8 @@ export const DraftBoardRosterView = ({
       const effectiveRound = p.lockedToRound ?? p.projectedRound;
       if (effectiveRound !== round) return false;
 
-      if (p.isCoachKid && p.coachTeamId === teamId) {
-        return true;
+      if (p.isCoachKid && p.coachTeamId) {
+        return p.coachTeamId === teamId;
       }
 
       if (p.lockedToTeamId === teamId) {

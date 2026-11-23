@@ -1,5 +1,35 @@
 import { Player } from '../types';
 
+export function getSiblingGroups(players: Player[]): Map<string, Player[]> {
+  const byId = new Map(players.map(player => [player.id, player]));
+  const neighbors = new Map(players.map(player => [player.id, new Set<string>()]));
+  for (const player of players) {
+    if (player.siblingId && byId.has(player.siblingId)) {
+      neighbors.get(player.id)!.add(player.siblingId);
+      neighbors.get(player.siblingId)!.add(player.id);
+    }
+  }
+  const groups = new Map<string, Player[]>();
+  for (const player of players) {
+    if (groups.has(player.id)) continue;
+    const group: Player[] = [];
+    const pending = [player.id];
+    const visited = new Set(pending);
+    while (pending.length) {
+      const id = pending.pop()!;
+      group.push(byId.get(id)!);
+      for (const neighbor of neighbors.get(id)!) {
+        if (!visited.has(neighbor)) {
+          visited.add(neighbor);
+          pending.push(neighbor);
+        }
+      }
+    }
+    for (const member of group) groups.set(member.id, group);
+  }
+  return groups;
+}
+
 export interface MandatoryPickResult {
   player: Player;
   reason: 'coach-kid' | 'sibling';
@@ -50,7 +80,7 @@ export function getMandatoryPick(
   // Check for sibling requirements
   if (options.includeSiblings) {
     const siblingToDraft = players.find((p) => {
-      if (p.isDrafted || !p.siblingId) return false;
+      if (p.isDrafted || !p.siblingId || (options.includeCoachKids && p.isCoachKid && p.coachTeamId && p.coachTeamId !== teamId)) return false;
 
       // If locked to this team, must draft in their lockedToRound or projectedRound
       if (p.lockedToTeamId === teamId) {
@@ -101,8 +131,8 @@ export function getMandatoryPick(
         (p) =>
           !p.isDrafted &&
           p.lockedToTeamId === teamId &&
-          // Exclude coach's kids already counted
-          !(p.isCoachKid && p.coachTeamId === teamId)
+          // Coach assignments take precedence over sibling locks.
+          !(options.includeCoachKids && p.isCoachKid && p.coachTeamId)
       );
       lockedSiblings.forEach(p => allMandatory.push({ player: p, reason: 'sibling' }));
     }
@@ -140,7 +170,8 @@ export function getMandatoryPick(
 export function lockSiblingToTeam(
   players: Player[],
   draftedPlayer: Player,
-  teamId: string
+  teamId: string,
+  includeCoachKids = true
 ): void {
   // Track which players we've already processed to avoid infinite loops
   const processed = new Set<string>([draftedPlayer.id]);
@@ -153,7 +184,11 @@ export function lockSiblingToTeam(
     if (current.siblingId) {
       const sibling = players.find(p => p.id === current.siblingId);
       if (sibling && !sibling.isDrafted && !processed.has(sibling.id)) {
-        sibling.lockedToTeamId = teamId;
+        if (!includeCoachKids || !sibling.isCoachKid || !sibling.coachTeamId || sibling.coachTeamId === teamId) {
+          sibling.lockedToTeamId = teamId;
+        } else {
+          sibling.lockedToTeamId = undefined;
+        }
         processed.add(sibling.id);
         toProcess.push(sibling); // Follow the chain
       }
@@ -162,7 +197,11 @@ export function lockSiblingToTeam(
     // Also check for any players whose siblingId points to current (reverse direction)
     players.forEach(p => {
       if (p.siblingId === current.id && !p.isDrafted && !processed.has(p.id)) {
-        p.lockedToTeamId = teamId;
+        if (!includeCoachKids || !p.isCoachKid || !p.coachTeamId || p.coachTeamId === teamId) {
+          p.lockedToTeamId = teamId;
+        } else {
+          p.lockedToTeamId = undefined;
+        }
         processed.add(p.id);
         toProcess.push(p); // Follow the chain
       }
@@ -191,7 +230,8 @@ export function getBestAvailable(
       }
 
       // Only exclude siblings locked to other teams if includeSiblings is ON
-      if (options.includeSiblings && p.lockedToTeamId && p.lockedToTeamId !== currentTeamId) {
+      if (options.includeSiblings && p.lockedToTeamId && p.lockedToTeamId !== currentTeamId
+        && !(options.includeCoachKids && p.isCoachKid && p.coachTeamId)) {
         return false;
       }
 
