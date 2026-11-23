@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api } from './client';
-import { normalizeRequestData, prepareRequestsForConfirmation } from '../utils/teamBuilderParser';
-import { DEFAULT_REQUESTS_FIRST_CONFIG } from '../types';
+import { normalizeRequestData, prepareRequestsForConfirmation, countPlayersWithRequests } from '../utils/teamBuilderParser';
+import { DEFAULT_REQUESTS_FIRST_CONFIG, ResolvedRequest } from '../types';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -23,6 +23,7 @@ describe('saved Team Builder requests', () => {
     const requests = prepareRequestsForConfirmation(normalization, DEFAULT_REQUESTS_FIRST_CONFIG);
     expect(requests).toContainEqual(expect.objectContaining({ requestType: 'coach', resolvedTargetId: 't1' }));
     expect(requests).toContainEqual(expect.objectContaining({ requestType: 'teammate', resolvedTargetId: 'p2' }));
+    expect(countPlayersWithRequests(requests)).toBe(1);
     await api.bulkCreatePlayers('division', [player]);
     expect(JSON.parse(fetch.mock.calls[1][1].body).players[0]).toMatchObject({
       coach_request: 'Smith', teammate_requests: ['Blake River'], school: 'Oak', grade: 2,
@@ -35,5 +36,14 @@ describe('saved Team Builder requests', () => {
     }))));
     vi.stubGlobal('document', { cookie: '' });
     expect((await api.getDivision('division')).players[0].teammateRequests).toBeUndefined();
+  });
+
+  it('counts distinct requesting players, including coach-only requests and unresolved requests', () => {
+    expect(countPlayersWithRequests([])).toBe(0);
+    expect(countPlayersWithRequests([
+      { playerId: 'p1', requestType: 'coach' },
+      { playerId: 'p1', requestType: 'teammate' },
+      { playerId: 'p2', requestType: 'teammate', status: 'unresolvable' },
+    ] as ResolvedRequest[])).toBe(2);
   });
 });

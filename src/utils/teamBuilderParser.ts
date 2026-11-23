@@ -1740,6 +1740,10 @@ function calculateLittleLeagueAge(birthdate: Date): number {
 
 import { ResolvedRequest, RequestCluster, RequestsFirstConfig, DEFAULT_REQUESTS_FIRST_CONFIG } from '../types';
 
+export function countPlayersWithRequests(requests: ResolvedRequest[]): number {
+  return new Set(requests.map(request => request.playerId)).size;
+}
+
 /**
  * Convert normalized request data into ResolvedRequest format for the confirmation UI.
  * This determines which requests are auto-confirmed vs need review.

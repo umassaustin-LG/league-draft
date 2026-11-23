@@ -38,6 +38,7 @@ import {
   normalizeRequestData,
   NormalizationResult,
   prepareRequestsForConfirmation,
+  countPlayersWithRequests,
 } from '../utils/teamBuilderParser';
 import * as XLSX from 'xlsx';
 
@@ -1858,7 +1859,7 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
                 </div>
                 <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
                   <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                    {registrationPlayers.filter(p => p.teammateRequests.length > 0).length}
+                    {countPlayersWithRequests(resolvedRequests)}
                   </div>
                   <div className="text-sm text-gray-500 dark:text-gray-400">With Requests</div>
                 </div>
