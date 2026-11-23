@@ -814,6 +814,15 @@ export const api = {
     return transformDivisionFromApi(data);
   },
 
+  /** Single-use speech-to-text token for the voice copilot. League admins only. */
+  async getVoiceCopilotToken(divisionId: string): Promise<{ token: string }> {
+    const response = await fetchWithCSRFRetry(`${API_BASE_URL}/divisions/${divisionId}/voice-copilot/token/`, {
+      ...getDefaultOptions('POST'),
+      method: 'POST',
+    });
+    return handleResponse<{ token: string }>(response);
+  },
+
   async createDivision(params: {
     name: string;
     preset: DivisionPreset;

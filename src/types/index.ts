@@ -697,3 +697,35 @@ export function createInitialDivision(
     isPersonal: true, // Default to personal workspace
   };
 }
+
+// Voice copilot (read-only draft questions for league admins)
+export type VoiceCopilotIntent =
+  | 'help'
+  | 'current-pick'
+  | 'on-deck'
+  | 'next-eligible'
+  | 'mandatory-pick'
+  | 'player-status'
+  | 'team-roster'
+  | 'draft-progress'
+  | 'roster-change'
+  | 'unknown';
+
+export interface VoiceCopilotQuery {
+  intent: VoiceCopilotIntent;
+  transcript: string;
+  playerIds: string[]; // Best player matches, more than one when the name is ambiguous
+  teamId?: string;
+}
+
+export interface VoiceCopilotAnswer {
+  intent: VoiceCopilotIntent;
+  text: string;
+  playerId?: string;
+  teamId?: string;
+}
+
+export interface PlayerEligibility {
+  eligible: boolean;
+  reasons: string[];
+}

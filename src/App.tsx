@@ -141,6 +141,15 @@ function App() {
     returnToDraftBoard,
   } = useDraft(activeDivision?.id);
 
+  // Server enforces the same rule on the voice copilot token endpoint.
+  const canUseVoiceCopilot = isApiMode() && !!user && !!activeDivision && (
+    user.role === 'master_admin' ||
+    (!!activeDivision.organizationId && user.organizations.some(
+      (m) => m.organizationId === activeDivision.organizationId && m.role === 'admin'
+    )) ||
+    (!!activeDivision.ownerId && activeDivision.ownerId === user.id)
+  );
+
   const { players, updatePlayer, updatePlayerField, linkSiblings, unlinkSibling, setAllPlayers } = usePlayerScoring(
     draftState.players,
     activeDivision?.teamCount ?? 8
@@ -1181,6 +1190,7 @@ function App() {
             isLoading={isLoading}
             mandatoryPickError={mandatoryPickError}
             onClearMandatoryPickError={clearMandatoryPickError}
+            voiceCopilotDivisionId={canUseVoiceCopilot ? activeDivision?.id : undefined}
           />
         )}
 
