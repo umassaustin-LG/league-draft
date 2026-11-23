@@ -799,6 +799,31 @@ class PlayerTeamScopingTests(TestCase):
         self.assertEqual(player.drafted_by_team, self.own_team)
         self.assertEqual(player.locked_to_team, self.own_team)
 
+    def test_bulk_create_preserves_temporary_excel_sibling_references(self):
+        response = self._post("/api/players/bulk/", {
+            "division_id": str(self.division.id),
+            "players": [
+                self._player("101", id="player-101", sibling_id="player-102"),
+                self._player("102", id="player-102", sibling_id="player-101"),
+            ],
+        })
+        self.assertEqual(response.status_code, 201, response.content)
+        first = Player.objects.get(division=self.division, bib="101")
+        second = Player.objects.get(division=self.division, bib="102")
+        self.assertEqual(first.sibling_id, second.id)
+        self.assertEqual(second.sibling_id, first.id)
+        returned = {player["bib"]: player for player in response.json()}
+        self.assertEqual(returned["101"]["sibling_id"], str(second.id))
+        self.assertEqual(returned["102"]["sibling_id"], str(first.id))
+
+    def test_bulk_create_drops_unresolved_sibling_references(self):
+        response = self._post("/api/players/bulk/", {
+            "division_id": str(self.division.id),
+            "players": [self._player("101", id="player-101", sibling_id="missing-player")],
+        })
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertIsNone(Player.objects.get(division=self.division, bib="101").sibling_id)
+
     def test_create_ignores_teams_from_other_divisions(self):
         response = self._post("/api/players/", {
             "division_id": str(self.division.id),
