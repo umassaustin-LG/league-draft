@@ -107,6 +107,22 @@ function getDefaultOptions(method: string = 'GET'): RequestInit {
   return options;
 }
 
+export async function getAnnouncerStatus(signal?: AbortSignal): Promise<{ enabled: boolean }> {
+  const response = await fetch(`${API_BASE_URL}/elevenlabs/status/`, {
+    ...getDefaultOptions(), signal,
+  });
+  if (!response.ok) throw new Error('Announcer unavailable');
+  return response.json();
+}
+
+export async function speakAnnouncement(text: string, signal: AbortSignal): Promise<Blob> {
+  const response = await fetch(`${API_BASE_URL}/elevenlabs/speak/`, {
+    ...getDefaultOptions('POST'), method: 'POST', body: JSON.stringify({ text }), signal,
+  });
+  if (!response.ok) throw new Error('Announcer unavailable');
+  return response.blob();
+}
+
 // -----------------------------------------------------------------------------
 // Type Transformations (snake_case <-> camelCase)
 // -----------------------------------------------------------------------------

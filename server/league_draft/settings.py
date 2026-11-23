@@ -167,3 +167,4 @@ PASSWORD_RESET_TIMEOUT = 3600
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
 
 ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
+ELEVENLABS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID") or "JBFqnCBsd6RMkjVDRZzb"
