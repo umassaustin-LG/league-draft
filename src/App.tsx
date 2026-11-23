@@ -447,6 +447,10 @@ function App() {
         // Save players
         const savedPlayers = await savePlayersToApi(activeDivision.id, updatedPlayers);
         updatedPlayers = savedPlayers;
+        await updateActiveDivision({
+          rosterSize: Math.ceil(updatedPlayers.length / activeDivision.teamCount),
+          phase: 'review',
+        });
       } catch (err) {
         // Issue #5: Show error and return early on save failures
         console.error('Failed to save to API:', err);
@@ -460,13 +464,6 @@ function App() {
 
     setAllPlayers(updatedPlayers);
     setPlayers(updatedPlayers);
-
-    // Update division with players and potentially updated teams
-    updateActiveDivision({
-      players: updatedPlayers,
-      teams: updatedTeams,
-      rosterSize: Math.ceil(updatedPlayers.length / activeDivision.teamCount),
-    });
 
     setTeamsState(updatedTeams);
 
