@@ -179,8 +179,7 @@ export function lockSiblingToTeam(
 export function getBestAvailable(
   players: Player[],
   currentTeamId?: string,
-  options: { includeCoachKids: boolean; includeSiblings: boolean } = { includeCoachKids: true, includeSiblings: true },
-  canPick?: (player: Player) => boolean
+  options: { includeCoachKids: boolean; includeSiblings: boolean } = { includeCoachKids: true, includeSiblings: true }
 ): Player | null {
   return players
     .filter(p => {
@@ -198,6 +197,5 @@ export function getBestAvailable(
 
       return true;
     })
-    .sort((a, b) => b.totalScore - a.totalScore)
-    .find(player => !canPick || canPick(player)) || null;
+    .sort((a, b) => b.totalScore - a.totalScore)[0] || null;
 }

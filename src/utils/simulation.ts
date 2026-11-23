@@ -51,37 +51,6 @@ export function runSimulation(
   const teamPicksMade: Record<string, number> = {};
   simTeams.forEach(t => { teamPicksMade[t.id] = 0; });
 
-  const siblingGroupByPlayer = new Map<string, Player[]>();
-  const grouped = new Set<string>();
-  for (const player of simPlayers) {
-    if (grouped.has(player.id)) continue;
-    const group = [player];
-    grouped.add(player.id);
-    for (let i = 0; i < group.length; i++) {
-      for (const sibling of simPlayers) {
-        if (!grouped.has(sibling.id) && (sibling.siblingId === group[i].id || group[i].siblingId === sibling.id)) {
-          grouped.add(sibling.id);
-          group.push(sibling);
-        }
-      }
-    }
-    group.forEach(member => siblingGroupByPlayer.set(member.id, group));
-  }
-
-  const preservesSiblingCapacity = (candidate: Player, teamId: string): boolean => {
-    const group = siblingGroupByPlayer.get(candidate.id)!;
-    if (group.length < 2 || group.some(player => player.isDrafted)) return true;
-    const coachTeams = new Set(group.filter(player => options.includeCoachKids && player.isCoachKid && player.coachTeamId)
-      .map(player => player.coachTeamId));
-    if (coachTeams.size > 1) return true;
-    const owed = new Set(group.map(player => player.id));
-    for (const player of simPlayers) {
-      if (!player.isDrafted && (player.lockedToTeamId === teamId ||
-        (options.includeCoachKids && player.isCoachKid && player.coachTeamId === teamId))) owed.add(player.id);
-    }
-    return owed.size <= totalRounds - teamPicksMade[teamId];
-  };
-
   for (let round = 1; round <= totalRounds; round++) {
     // USE THE SAME calculateDraftOrder function as real draft
     const roundOrder = calculateDraftOrder(simTeams, round, draftFormat, draftOrder);
@@ -108,8 +77,7 @@ export function runSimulation(
         playerToDraft = mandatoryResult.player;
       } else {
         // USE THE SAME getBestAvailable function - pass teamId and options to respect checkbox settings
-        playerToDraft = getBestAvailable(simPlayers, teamId, options,
-          options.includeSiblings ? player => preservesSiblingCapacity(player, teamId) : undefined);
+        playerToDraft = getBestAvailable(simPlayers, teamId, options);
       }
 
       if (playerToDraft) {
