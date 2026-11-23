@@ -11,6 +11,16 @@ const assignments = (teams: TeamBuilderTeam[]): AssignmentResult[] => teams.flat
 const config = { minRosterSize: 2, maxRosterSize: 5, forceEvenTeams: false };
 
 describe('minimum roster group selection', () => {
+  it('moves an unrequested player instead of breaking a satisfied mutual friendship', () => {
+    const players = [player('a', { resolvedTeammateIds: ['b'] }), player('b', { resolvedTeammateIds: ['a'] }),
+      player('free'), player('locked', { lockedToTeamId: 'short' })];
+    const teams = [team('donor', ['a', 'b', 'free']), team('short', ['locked'])];
+    const picks = assignments(teams);
+    fillMinimumRosters(players, teams, picks, config, []);
+    expect(teams[0].assignedPlayerIds).toEqual(['a', 'b']);
+    expect(teams[1].assignedPlayerIds).toEqual(['locked', 'free']);
+  });
+
   it('moves a pair before a singleton when only the pair can fill the deficit', () => {
     const players = [player('single'), player('a', { siblingId: 'b' }), player('b', { siblingId: 'a' }),
       player('lock1', { lockedToTeamId: 'donor' }), player('lock2', { lockedToTeamId: 'donor' })];

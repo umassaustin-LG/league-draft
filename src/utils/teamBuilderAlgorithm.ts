@@ -130,7 +130,8 @@ export function fillMinimumRosters(
   teams: TeamBuilderTeam[],
   assignments: AssignmentResult[],
   config: Pick<TeamBuilderConfig, 'minRosterSize' | 'maxRosterSize' | 'forceEvenTeams'>,
-  warnings: string[]
+  warnings: string[],
+  requests: ResolvedRequest[] = []
 ) {
   if (teams.length === 0) return;
   const minimum = Math.min(
@@ -142,6 +143,20 @@ export function fillMinimumRosters(
     ? Math.min(config.maxRosterSize, Math.ceil(players.length / teams.length))
     : config.maxRosterSize;
   const groups: TeamBuilderPlayer[][] = [];
+  const assignedTeams = new Map(assignments.map(assignment => [assignment.playerId, assignment.teamId]));
+  const preferences = new Map<string, { playerId: string; targetId: string; type: 'coach' | 'teammate' }>();
+  const addPreference = (playerId: string, targetId: string, type: 'coach' | 'teammate') => {
+    preferences.set(`${playerId}:${type}:${targetId}`, { playerId, targetId, type });
+  };
+  for (const player of players) {
+    if (player.resolvedCoachTeamId) addPreference(player.id, player.resolvedCoachTeamId, 'coach');
+    for (const id of player.resolvedTeammateIds || []) addPreference(player.id, id, 'teammate');
+  }
+  for (const request of requests) {
+    if (request.resolvedTargetId && ['auto-confirmed', 'user-confirmed'].includes(request.status)) {
+      addPreference(request.playerId, request.resolvedTargetId, request.requestType);
+    }
+  }
   const visited = new Set<string>();
   for (const player of players) {
     if (visited.has(player.id)) continue;
@@ -163,7 +178,21 @@ export function fillMinimumRosters(
   for (const recipient of [...teams].sort((a, b) => a.assignedPlayerIds.length - b.assignedPlayerIds.length)) {
     while (recipient.assignedPlayerIds.length < minimum) {
       const deficit = minimum - recipient.assignedPlayerIds.length;
+      const requestLoss = (group: TeamBuilderPlayer[]) => {
+        const moving = new Set(group.map(player => player.id));
+        let lost = 0;
+        for (const { playerId, targetId, type } of preferences.values()) {
+          const before = assignedTeams.get(playerId);
+          const targetBefore = type === 'coach' ? targetId : assignedTeams.get(targetId);
+          const after = moving.has(playerId) ? recipient.id : before;
+          const targetAfter = type === 'teammate' && moving.has(targetId) ? recipient.id : targetBefore;
+          if (before && before === targetBefore && after !== targetAfter) lost++;
+        }
+        return lost;
+      };
       const group = [...groups].sort((a, b) =>
+        Number(b.length === deficit) - Number(a.length === deficit) ||
+        requestLoss(a) - requestLoss(b) ||
         Math.abs(a.length - deficit) - Math.abs(b.length - deficit)
       ).find(group => {
         if (group.some(player => player.isCoachKid || player.lockedToTeamId)) return false;
@@ -183,6 +212,7 @@ export function fillMinimumRosters(
         const assignment = assignments.find(assignment => assignment.playerId === player.id)!;
         assignment.teamId = recipient.id;
         assignment.reason = 'balance';
+        assignedTeams.set(player.id, recipient.id);
       }
     }
   }
@@ -1198,7 +1228,7 @@ export function runRequestsFirstAlgorithm(
   // PHASE 4: Calculate suggested trades for balance
   // =========================================================================
 
-  fillMinimumRosters(players, workingTeams, assignments, fullConfig, warnings);
+  fillMinimumRosters(players, workingTeams, assignments, fullConfig, warnings, resolvedRequests);
 
   const suggestedTrades = findBalancingTrades(
     workingTeams,
