@@ -90,7 +90,7 @@ export function runSimulation(
             owed ??= simPlayers.filter(player => !player.isDrafted && (
               (options.includeCoachKids && player.isCoachKid && player.coachTeamId === teamId)
               || player.lockedToTeamId === teamId
-            ));
+            )).flatMap(player => siblingGroups.get(player.id)!.filter(sibling => !sibling.isDrafted));
             return new Set([...undrafted, ...owed].map(player => player.id)).size <= remainingPicks[teamId];
           };
           if (!fits(playerToDraft)) {

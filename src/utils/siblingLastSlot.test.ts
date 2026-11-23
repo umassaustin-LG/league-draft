@@ -184,4 +184,20 @@ describe('simulation last-slot siblings', () => {
     });
     expect(result.players.every(p => p.isDrafted)).toBe(true);
   });
+
+  it.each(['straight', 'snake', 'recalculated'] as const)('reserves a future coach kid’s entire sibling group in %s', (format) => {
+    const players = [
+      player('A', { totalScore: 100, siblingId: 'B' }),
+      player('B', { totalScore: 99, siblingId: 'A' }),
+      player('Coach', { totalScore: 10, isCoachKid: true, coachTeamId: 'a', siblingId: 'Coach sibling' }),
+      player('Coach sibling', { totalScore: 9, siblingId: 'Coach', projectedRound: 3 }),
+      player('Single 1', { totalScore: 80 }), player('Single 2', { totalScore: 70 }),
+    ];
+    const result = runSimulation(players, [team('a', 1), team('b', 2)], ['a', 'b'], format, options);
+    expect(result.players[0].draftedByTeamId).toBe('b');
+    expect(result.players[1].draftedByTeamId).toBe('b');
+    expect(result.players[2].draftedByTeamId).toBe('a');
+    expect(result.players[3].draftedByTeamId).toBe('a');
+    expect(result.players.every(player => player.isDrafted)).toBe(true);
+  });
 });
