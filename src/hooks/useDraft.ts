@@ -1,6 +1,7 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useMemo } from 'react';
 import { Player, Team, DraftState, DraftFormat, AppPhase, Division, PickWarning } from '../types';
 import { api, ApiError } from '../api/client';
+import { clearForeignCoachMandatoryPick } from '../utils/draftLogic';
 
 /**
  * Check if an error is a session expiry error (401 Unauthorized)
@@ -45,7 +46,8 @@ const initialDraftState: DraftState = {
 
 export const useDraft = (_divisionId?: string) => {
   const [phase, setPhase] = useState<AppPhase>('upload');
-  const [draftState, setDraftState] = useState<DraftState>(initialDraftState);
+  const [savedDraftState, setDraftState] = useState<DraftState>(initialDraftState);
+  const draftState = useMemo(() => clearForeignCoachMandatoryPick(savedDraftState), [savedDraftState]);
   const [pendingComplete, setPendingComplete] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

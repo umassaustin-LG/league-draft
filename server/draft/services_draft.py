@@ -91,6 +91,7 @@ class DraftService:
             raise ValueError("Not this team's turn to pick")
 
         # Check for mandatory pick
+        cls._repair_foreign_coach_mandatory_pick(draft_state)
         if (
             draft_state.mandatory_player_id
             and str(draft_state.mandatory_player_id) != str(player_id)
@@ -175,6 +176,7 @@ class DraftService:
             raise ValueError("Not this team's turn to pick")
 
         # Cannot skip if there's a mandatory pick
+        cls._repair_foreign_coach_mandatory_pick(draft_state)
         if draft_state.mandatory_player_id:
             raise ValueError("Cannot skip - mandatory pick required")
 
@@ -473,6 +475,18 @@ class DraftService:
 
         # Remaining picks = total rounds - picks already made
         return total_rounds - picks_made
+
+    @classmethod
+    def _repair_foreign_coach_mandatory_pick(cls, draft_state: DraftState) -> None:
+        player = draft_state.mandatory_player
+        if not (player and player.is_coach_kid and player.coach_team_id
+                and player.coach_team_id != draft_state.current_team_id):
+            return
+        draft_state.mandatory_player = None
+        draft_state.mandatory_reason = ""
+        draft_state.mandatory_sibling_name = ""
+        draft_state.save(update_fields=["mandatory_player", "mandatory_reason", "mandatory_sibling_name"])
+        cls._check_and_set_mandatory_pick(draft_state, draft_state.current_team, draft_state.current_round)
 
     @classmethod
     def _check_and_set_mandatory_pick(

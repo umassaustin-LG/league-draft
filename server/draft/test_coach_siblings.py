@@ -89,3 +89,39 @@ class CoachSiblingTests(TestCase):
         DraftService.draft_player(self.state.id, self.cedar.id, self.teams[0].id)
         self.delta.refresh_from_db()
         self.assertEqual(self.delta.locked_to_team_id, self.teams[0].id)
+
+    def set_stale_mandatory(self):
+        self.delta.locked_to_team = self.teams[0]
+        self.delta.save()
+        self.state.mandatory_player = self.delta
+        self.state.mandatory_reason = "sibling"
+        self.state.mandatory_sibling_name = self.cedar.name
+        self.state.save()
+
+    def test_resume_can_draft_alternative_to_foreign_coach_mandatory(self):
+        self.set_stale_mandatory()
+        state = DraftService.draft_player(self.state.id, self.singles[0].id, self.teams[0].id)
+        self.assertEqual(state.picks.count(), 1)
+        self.assertIsNone(state.mandatory_player_id)
+        self.delta.refresh_from_db()
+        self.assertIsNone(self.delta.locked_to_team_id)
+
+    def test_resume_can_skip_after_repairing_foreign_coach_mandatory(self):
+        self.singles[0].delete()
+        self.set_stale_mandatory()
+        state = DraftService.skip_pick(self.state.id, self.teams[0].id)
+        self.assertTrue(state.picks.first().was_skipped)
+
+    def test_repair_recomputes_valid_mandatory_and_does_not_bypass_it(self):
+        self.set_stale_mandatory()
+        own_child = self.singles[0]
+        own_child.is_coach_kid = True
+        own_child.coach_team = self.teams[0]
+        own_child.projected_round = 1
+        own_child.save()
+        with self.assertRaisesMessage(ValueError, "mandatory player"):
+            DraftService.draft_player(self.state.id, self.singles[1].id, self.teams[0].id)
+        with self.assertRaisesMessage(ValueError, "mandatory pick required"):
+            DraftService.skip_pick(self.state.id, self.teams[0].id)
+        state = DraftService.draft_player(self.state.id, own_child.id, self.teams[0].id)
+        self.assertEqual(state.picks.first().player_id, own_child.id)

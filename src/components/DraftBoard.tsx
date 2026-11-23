@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { DraftState, Team, DivisionAgeRange, Player, PickWarning, DraftPick } from '../types';
 import { getPickWarnings } from '../utils/draftSafety';
+import { clearForeignCoachMandatoryPick } from '../utils/draftLogic';
 import { getNextPick, calculateDraftOrder } from '../utils/draftOrder';
 import { useViewMode } from '../contexts/ViewContext';
 import { VoiceCopilot } from './draft/VoiceCopilot';
@@ -58,7 +59,7 @@ type PendingAction =
   | { kind: 'age-override'; player: Player; currentCount: number };
 
 export const DraftBoard = ({
-  draftState,
+  draftState: savedDraftState,
   controls: draftControls,
   enforceAgeLimit,
   maxPerAge,
@@ -73,6 +74,7 @@ export const DraftBoard = ({
   onClearMandatoryPickError,
   voiceCopilotDivisionId,
 }: DraftBoardProps) => {
+  const draftState = clearForeignCoachMandatoryPick(savedDraftState);
   const viewMode = useViewMode();
   const isPublicView = viewMode === 'public';
   const controls = isPublicView ? undefined : draftControls;

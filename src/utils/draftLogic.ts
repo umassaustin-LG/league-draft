@@ -1,4 +1,11 @@
-import { Player } from '../types';
+import { DraftState, Player } from '../types';
+
+export function clearForeignCoachMandatoryPick(state: DraftState): DraftState {
+  const player = state.players.find(player => player.id === state.mandatoryPick?.playerId);
+  return player?.isCoachKid && player.coachTeamId && player.coachTeamId !== state.currentTeamId
+    ? { ...state, mandatoryPick: undefined }
+    : state;
+}
 
 export function getSiblingGroups(players: Player[]): Map<string, Player[]> {
   const byId = new Map(players.map(player => [player.id, player]));

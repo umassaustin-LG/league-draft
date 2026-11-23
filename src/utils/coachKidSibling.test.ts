@@ -3,8 +3,9 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { DraftBoardRosterView } from '../components/draft/DraftBoardRosterView';
 import { DraftBoardPlayerGrid } from '../components/draft/DraftBoardPlayerGrid';
-import { Player, Team } from '../types';
-import { getBestAvailable, getMandatoryPick, lockSiblingToTeam } from './draftLogic';
+import { DraftBoard } from '../components/DraftBoard';
+import { DraftState, Player, Team } from '../types';
+import { clearForeignCoachMandatoryPick, getBestAvailable, getMandatoryPick, lockSiblingToTeam } from './draftLogic';
 import { getPickWarnings } from './draftSafety';
 import { runSimulation } from './simulation';
 
@@ -29,6 +30,24 @@ const family = () => [
 const config = { enforceAgeLimit: false, maxPerAge: 0, ageRange: { min: 7, max: 10 }, rosterSize: 2, teamCount: 5, teams };
 
 describe('coach assignment takes precedence over sibling locks', () => {
+  it('clears a resumed foreign coach mandatory pick in hook state and on the board', () => {
+    const state: DraftState = {
+      players: family(), teams, draftFormat: 'straight', draftOrder: teams.map(t => t.id),
+      currentRoundOrder: teams.map(t => t.id), picks: [], currentRound: 1, currentPickInRound: 1,
+      currentTeamId: 't1', isDraftComplete: false, trades: [],
+      mandatoryPick: { playerId: 'Delta', reason: 'sibling', siblingName: 'Cedar' },
+    };
+    expect(clearForeignCoachMandatoryPick(state).mandatoryPick).toBeUndefined();
+    expect(clearForeignCoachMandatoryPick({ ...state, currentTeamId: 't5' }).mandatoryPick).toEqual(state.mandatoryPick);
+    expect(clearForeignCoachMandatoryPick({ ...state, mandatoryPick: undefined }).mandatoryPick).toBeUndefined();
+    const html = renderToStaticMarkup(createElement(DraftBoard, {
+      draftState: state, enforceAgeLimit: false, maxPerAge: 0, rosterSize: 2,
+      controls: { onDraftPlayer: () => {}, onSkipPick: () => {}, onUndo: () => {}, onReset: () => {},
+        pendingComplete: false, onFinalizeDraft: () => {}, onCancelComplete: () => {} },
+    }));
+    expect(html).not.toContain('Sibling of Cedar');
+    expect(html).toMatch(/<button[^>]*>Draft<\/button>/);
+  });
   it.each(['forward', 'reverse'] as const)('does not lock another team’s coach kid through a %s link', direction => {
     const players = family();
     if (direction === 'forward') players[1].siblingId = undefined;
