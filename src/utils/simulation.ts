@@ -51,7 +51,7 @@ export function runSimulation(
   const teamPicksMade: Record<string, number> = {};
   simTeams.forEach(t => { teamPicksMade[t.id] = 0; });
 
-  const siblingGroups: Player[][] = [];
+  const siblingGroupByPlayer = new Map<string, Player[]>();
   const grouped = new Set<string>();
   for (const player of simPlayers) {
     if (grouped.has(player.id)) continue;
@@ -65,41 +65,21 @@ export function runSimulation(
         }
       }
     }
-    siblingGroups.push(group);
+    group.forEach(member => siblingGroupByPlayer.set(member.id, group));
   }
 
   const preservesSiblingCapacity = (candidate: Player, teamId: string): boolean => {
-    const capacity = simTeams.map(team => totalRounds - teamPicksMade[team.id] - Number(team.id === teamId));
-    const pending = siblingGroups.map(group => {
-      const remaining = group.filter(player => !player.isDrafted && player.id !== candidate.id);
-      const locks = new Set(remaining.flatMap(player => [
-        player.lockedToTeamId,
-        options.includeCoachKids && player.isCoachKid ? player.coachTeamId : undefined,
-      ]).filter((id): id is string => !!id));
-      if (group.some(player => player.id === candidate.id)) locks.add(teamId);
-      return { count: remaining.length, locks: [...locks] };
-    }).filter(group => group.count > 0 && (group.count > 1 || group.locks.length > 0))
-      .sort((a, b) => b.locks.length - a.locks.length || b.count - a.count);
-    const failed = new Set<string>();
-    const place = (index: number): boolean => {
-      if (index === pending.length) return true;
-      const key = `${index}:${capacity.join(',')}`;
-      if (failed.has(key)) return false;
-      const group = pending[index];
-      if (group.locks.length > 1) return false;
-      const tried = new Set<number>();
-      for (let i = 0; i < simTeams.length; i++) {
-        if (group.locks.length && group.locks[0] !== simTeams[i].id) continue;
-        if (capacity[i] < group.count || (!group.locks.length && tried.has(capacity[i]))) continue;
-        tried.add(capacity[i]);
-        capacity[i] -= group.count;
-        if (place(index + 1)) return true;
-        capacity[i] += group.count;
-      }
-      failed.add(key);
-      return false;
-    };
-    return place(0);
+    const group = siblingGroupByPlayer.get(candidate.id)!;
+    if (group.length < 2 || group.some(player => player.isDrafted)) return true;
+    const coachTeams = new Set(group.filter(player => options.includeCoachKids && player.isCoachKid && player.coachTeamId)
+      .map(player => player.coachTeamId));
+    if (coachTeams.size > 1) return true;
+    const owed = new Set(group.map(player => player.id));
+    for (const player of simPlayers) {
+      if (!player.isDrafted && (player.lockedToTeamId === teamId ||
+        (options.includeCoachKids && player.isCoachKid && player.coachTeamId === teamId))) owed.add(player.id);
+    }
+    return owed.size <= totalRounds - teamPicksMade[teamId];
   };
 
   for (let round = 1; round <= totalRounds; round++) {
@@ -128,10 +108,8 @@ export function runSimulation(
         playerToDraft = mandatoryResult.player;
       } else {
         // USE THE SAME getBestAvailable function - pass teamId and options to respect checkbox settings
-        const eligible = options.includeSiblings
-          ? simPlayers.filter(player => !player.isDrafted && preservesSiblingCapacity(player, teamId))
-          : simPlayers;
-        playerToDraft = getBestAvailable(eligible, teamId, options);
+        playerToDraft = getBestAvailable(simPlayers, teamId, options,
+          options.includeSiblings ? player => preservesSiblingCapacity(player, teamId) : undefined);
       }
 
       if (playerToDraft) {
