@@ -13,6 +13,8 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.validators import validate_email as django_validate_email
 
+from .models import OrganizationMembership
+
 User = get_user_model()
 
 
@@ -834,8 +836,8 @@ def validate_invitation_data(data: Dict[str, Any]) -> Tuple[Optional[Dict], Opti
         except DjangoValidationError:
             errors["email"] = ["Enter a valid email address"]
 
-    role = data.get("role", "member")
-    valid_roles = ["admin", "member"]
+    role = data.get("role", "viewer")
+    valid_roles = [role for role, _ in OrganizationMembership.ROLE_CHOICES]
     if role not in valid_roles:
         errors["role"] = [f"Invalid role. Must be one of: {', '.join(valid_roles)}"]
 
@@ -872,7 +874,7 @@ def validate_member_role_data(data: Dict[str, Any]) -> Tuple[Optional[Dict], Opt
         (None, errors) on failure
     """
     role = data.get("role", "")
-    valid_roles = ["admin", "member"]
+    valid_roles = [role for role, _ in OrganizationMembership.ROLE_CHOICES]
     if not role:
         return None, {"role": ["Role is required"]}
     if role not in valid_roles:
