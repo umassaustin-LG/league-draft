@@ -10,6 +10,24 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+if os.environ.get('SENTRY_DSN'):
+    import sentry_sdk
+    from sentry_sdk.integrations.django import DjangoIntegration
+    from .telemetry import before_send
+
+    sentry_sdk.init(
+        dsn=os.environ['SENTRY_DSN'],
+        environment=os.environ.get('SENTRY_ENVIRONMENT'),
+        integrations=[DjangoIntegration()],
+        send_default_pii=False,
+        traces_sample_rate=0.1,
+        max_request_body_size='never',
+        include_local_variables=False,
+        before_send=before_send,
+        before_send_transaction=before_send,
+        before_breadcrumb=before_send,
+    )
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 

@@ -20,6 +20,18 @@ spec:
           ports:
             - containerPort: 8000
           env:
+            - name: SENTRY_DSN
+              valueFrom:
+                configMapKeyRef:
+                  name: league-draft-config
+                  key: sentry-dsn
+                  optional: true
+            - name: SENTRY_ENVIRONMENT
+              valueFrom:
+                configMapKeyRef:
+                  name: league-draft-config
+                  key: sentry-environment
+                  optional: true
             - name: DEBUG
               value: "False"
             - name: ELEVENLABS_API_KEY
@@ -86,6 +98,8 @@ kind: ConfigMap
 metadata:
   name: league-draft-config
 data:
+  sentry-dsn: "https://44d2110d17b7e134256689c3ad43630f@o4512472979865600.ingest.us.sentry.io/4512472994217984"
+  sentry-environment: "production"
   allowed-hosts: "league-draft.gaimplan.com"
   cors-origins: "https://league-draft.gaimplan.com"
 ---

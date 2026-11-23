@@ -25,6 +25,72 @@ from .models import (
 )
 from .services import DraftService
 from .views.helpers import RateLimiter, get_client_ip
+from league_draft.telemetry import before_send, scrub
+
+
+class TelemetryScrubberTests(TestCase):
+    def test_url_path_secrets(self):
+        for path in ('/join/short', '/api/leagues/join/short', '/reset/uid/short',
+                     '/reset-password/uid/short', '/invite/short', '/invitation/short',
+                     '/accept/short', '/token/short', '/confirm/short'):
+            clean = scrub({'url': 'https://example.com' + path + '?private=yes'})['url']
+            self.assertNotIn('short', clean)
+            self.assertNotIn('private=yes', clean)
+        for secret in ('12345678-1234-1234-1234-123456789abc', 'abcdefghijklmnopqrst', '%61' * 20):
+            self.assertEqual(scrub('/draft/' + secret), '/draft/[REDACTED]')
+        self.assertEqual(scrub('/draft/players'), '/draft/players')
+        self.assertEqual(scrub('/reset-password?uid=abc&token=secret'), '/reset-password')
+
+    def test_nested_sensitive_properties(self):
+        event = {'extra': {'firstName': 'Alice', 'players': ['Alice'], 'safe': 42}}
+        self.assertEqual(scrub(event), {
+            'extra': {'firstName': '[REDACTED]', 'players': '[REDACTED]', 'safe': 42},
+        })
+        self.assertEqual(event['extra']['firstName'], 'Alice')
+
+    def test_error_strings_and_requests(self):
+        event = {
+            'exception': {'values': [{'value': 'Contact a@example.com or +1 (212) 555-1234'}]},
+            'request': {'url': 'https://example.com/draft?secret=value#email',
+                        'data': {'private': 'body'}, 'cookies': 'session',
+                        'headers': {'Authorization': 'secret'}, 'query_string': 'private'},
+            'user': {'id': 'opaque-id', 'email': 'a@example.com', 'ip_address': '1.2.3.4'},
+        }
+        clean = before_send(event, {})
+        self.assertEqual(clean['exception']['values'][0]['value'], 'Contact [REDACTED] or [REDACTED]')
+        self.assertEqual(clean['request'], {'url': 'https://example.com/draft'})
+        self.assertEqual(clean['user'], {'id': 'opaque-id'})
+
+    def test_empty_and_breadcrumb(self):
+        self.assertEqual(scrub({}), {})
+        self.assertIsNone(scrub(None))
+        self.assertEqual(before_send({'message': 'private', 'data': {'body': 'secret'}}, {}),
+                         {'message': 'private'})
+
+    def test_word_boundaries_and_exception_messages(self):
+        self.assertEqual(scrub({'message': 'x'}), {'message': 'x'})
+        event = {'exception': {'values': [{'message': 'Contact a@example.com or 212-555-1234'}]},
+                 'packages': 'x', 'language': 'en', 'filename': 'main.ts',
+                 'player_name': 'Alice', 'firstName': 'Alice', 'roster': ['Alice'],
+                 'coachEmail': 'a@example.com', 'teams': ['A'], 'scores': [10]}
+        clean = scrub(event)
+        self.assertEqual(clean['exception']['values'][0]['message'], 'Contact [REDACTED] or [REDACTED]')
+        for key in ('packages', 'language', 'filename'):
+            self.assertEqual(clean[key], event[key])
+        for key in ('player_name', 'firstName', 'roster', 'coachEmail', 'teams', 'scores'):
+            self.assertEqual(clean[key], '[REDACTED]')
+
+    def test_posthog_system_properties(self):
+        properties = {'token': 'phc_project', 'distinct_id': 'opaque', '$pathname': '/draft',
+                      '$os_name': 'Linux', '$current_url': 'https://example.com/?private=yes',
+                      '$email': 'a@example.com', 'coachEmail': 'a@example.com'}
+        clean = scrub(properties, posthog=True)
+        for key in ('token', 'distinct_id', '$pathname', '$os_name'):
+            self.assertEqual(clean[key], properties[key])
+        self.assertEqual(clean['$current_url'], 'https://example.com/')
+        self.assertEqual(clean['$email'], '[REDACTED]')
+        self.assertEqual(clean['coachEmail'], '[REDACTED]')
+        self.assertEqual(scrub({'token': 'private'}), {'token': '[REDACTED]'})
 
 
 @override_settings(ELEVENLABS_API_KEY="")
