@@ -625,6 +625,8 @@ def validate_bulk_players_data(data: Dict[str, Any]) -> Tuple[Optional[Dict], Op
             # Preserve original ID for sibling mapping
             if "id" in player_data:
                 cleaned["id"] = player_data["id"]
+            if player_data.get("sibling_id"):
+                cleaned["sibling_id"] = str(player_data["sibling_id"])
             cleaned_players.append(cleaned)
 
     if errors:
