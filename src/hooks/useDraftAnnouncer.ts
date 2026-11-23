@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { getAnnouncerStatus, speakAnnouncement } from '../api/client';
 import { ViewMode } from '../contexts/ViewContext';
-import { DraftState } from '../types';
+import { DraftPick, DraftState } from '../types';
 import { buildAnnouncement, newestAppendedPick, pickSignature } from '../utils/draftAnnouncer';
 
 function readMuted(mode: ViewMode): boolean {
@@ -13,17 +13,20 @@ function readMuted(mode: ViewMode): boolean {
   }
 }
 
-export function useDraftAnnouncer(state: DraftState, mode: ViewMode) {
+const NO_PICKS: DraftPick[] = [];
+
+export function useDraftAnnouncer(state: DraftState | undefined, mode: ViewMode) {
   const [enabled, setEnabled] = useState(false);
   const [preference, setPreference] = useState(() => ({ mode, muted: readMuted(mode) }));
   const muted = preference.mode === mode ? preference.muted : readMuted(mode);
   const [caption, setCaption] = useState('');
-  const previous = useRef(state.picks);
-  const previousDraft = useRef(state.divisionId);
+  const previous = useRef(state?.picks ?? NO_PICKS);
+  const previousDraft = useRef(state?.divisionId);
+  const hadState = useRef(state !== undefined);
   const latest = useRef(state);
   latest.current = state;
   const stop = useRef<() => void>(() => {});
-  const signature = pickSignature(state.picks);
+  const signature = pickSignature(state?.picks ?? NO_PICKS);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -33,8 +36,16 @@ export function useDraftAnnouncer(state: DraftState, mode: ViewMode) {
 
   useEffect(() => {
     const current = latest.current;
-    const pick = previousDraft.current === current.divisionId
+    if (!current) {
+      hadState.current = false;
+      previous.current = NO_PICKS;
+      previousDraft.current = undefined;
+      setCaption('');
+      return;
+    }
+    const pick = hadState.current && previousDraft.current === current.divisionId
       ? newestAppendedPick(previous.current, current.picks) : null;
+    hadState.current = true;
     previous.current = current.picks;
     previousDraft.current = current.divisionId;
     setCaption('');
@@ -71,7 +82,7 @@ export function useDraftAnnouncer(state: DraftState, mode: ViewMode) {
       await audio.play();
     }).catch(dispose);
     return dispose;
-  }, [signature, state.divisionId, enabled, muted, mode]);
+  }, [signature, state?.divisionId, state !== undefined, enabled, muted, mode]);
 
   const toggleMuted = () => {
     stop.current();

@@ -4,6 +4,7 @@ import type { Division } from '../types';
 import { getDivisionView } from '../utils/divisionAccess';
 import { downloadTextFile, generatePublicRosters } from '../utils/exports';
 import { DraftBoard } from './DraftBoard';
+import { DraftAnnouncer } from './DraftAnnouncer';
 import { TeamRosters } from './TeamRosters';
 
 const DRAFT_REFRESH_MS = 5000;
@@ -44,6 +45,7 @@ export function DivisionOverview({ initialDivision, onBack }: {
 
   return (
     <main className="min-h-screen bg-surface-2 text-ink">
+      <DraftAnnouncer draftState={refreshError === 'unavailable' ? undefined : draft ?? undefined} />
       <header className="border-b border-rule bg-surface">
         <div className="mx-auto flex max-w-7xl flex-wrap items-start justify-between gap-4 px-4 py-4">
           <div>
