@@ -125,7 +125,7 @@ export interface TeamSummary {
   meanDeltaPercent: number; // As percentage of mean average
 }
 
-function fillMinimumRosters(
+export function fillMinimumRosters(
   players: TeamBuilderPlayer[],
   teams: TeamBuilderTeam[],
   assignments: AssignmentResult[],
@@ -162,7 +162,10 @@ function fillMinimumRosters(
 
   for (const recipient of [...teams].sort((a, b) => a.assignedPlayerIds.length - b.assignedPlayerIds.length)) {
     while (recipient.assignedPlayerIds.length < minimum) {
-      const group = groups.find(group => {
+      const deficit = minimum - recipient.assignedPlayerIds.length;
+      const group = [...groups].sort((a, b) =>
+        Math.abs(a.length - deficit) - Math.abs(b.length - deficit)
+      ).find(group => {
         if (group.some(player => player.isCoachKid || player.lockedToTeamId)) return false;
         if (recipient.assignedPlayerIds.length + group.length > maximum) return false;
         const donor = teams.find(team => team.assignedPlayerIds.includes(group[0].id));
