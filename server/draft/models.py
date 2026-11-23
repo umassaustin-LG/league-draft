@@ -547,6 +547,8 @@ class DraftPick(models.Model):
     team_id = models.UUIDField()
     player_id = models.UUIDField(null=True, blank=True)
     was_skipped = models.BooleanField(default=False)
+    round_order_snapshot = models.JSONField(default=list)
+    locked_sibling_ids = models.JSONField(default=list)
 
     timestamp = models.DateTimeField(auto_now_add=True)
 
@@ -567,6 +569,23 @@ class DraftPick(models.Model):
 # -----------------------------------------------------------------------------
 # Evaluation Template Model
 # -----------------------------------------------------------------------------
+
+
+class DraftAuditEvent(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    draft_state = models.ForeignKey(DraftState, on_delete=models.CASCADE, related_name="audit_events")
+    action = models.CharField(max_length=10, choices=[(a, a) for a in ("start", "pick", "skip", "undo", "trade")])
+    round = models.IntegerField()
+    pick = models.IntegerField(null=True)
+    team_id = models.UUIDField(null=True)
+    player_id = models.UUIDField(null=True)
+    actor = models.ForeignKey("User", on_delete=models.SET_NULL, null=True)
+    details = models.JSONField(default=dict)
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "draft_audit_events"
+        ordering = ["timestamp"]
 
 
 class EvaluationTemplate(models.Model):

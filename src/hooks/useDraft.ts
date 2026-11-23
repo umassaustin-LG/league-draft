@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
-import { Player, Team, DraftState, DraftFormat, AppPhase, Division } from '../types';
+import { Player, Team, DraftState, DraftFormat, AppPhase, Division, PickWarning } from '../types';
 import { api, ApiError } from '../api/client';
 
 /**
@@ -49,6 +49,8 @@ export const useDraft = (_divisionId?: string) => {
   const [pendingComplete, setPendingComplete] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingRuleWarnings, setPendingRuleWarnings] = useState<{ playerId: string; warnings: PickWarning[] } | null>(null);
+  const clearPendingRuleWarnings = useCallback(() => setPendingRuleWarnings(null), []);
   const [mandatoryPickError, setMandatoryPickError] = useState<string | null>(null);
 
   // Store draft state ID (needed for API draft operations)
@@ -65,6 +67,7 @@ export const useDraft = (_divisionId?: string) => {
 
   // Load state from a division object (called when selecting a division)
   const loadDivisionState = useCallback((division: Division) => {
+    setPendingRuleWarnings(null);
     currentDivisionId.current = division.id;
 
     // If division has a saved draft state, use it
@@ -101,6 +104,7 @@ export const useDraft = (_divisionId?: string) => {
     preservedPlayers?: Player[],
     preservedTeams?: Team[]
   ) => {
+    setPendingRuleWarnings(null);
     const divisionId = currentDivisionId.current;
 
     // If targetPhase and preserved data provided, reset to that phase with data intact
@@ -218,7 +222,7 @@ export const useDraft = (_divisionId?: string) => {
   }, [draftState.draftFormat, draftState.draftOrder, isLoading]);
 
   const draftPlayer = useCallback(
-    async (playerId: string) => {
+    async (playerId: string, options: { acknowledgeWarnings?: boolean } = {}) => {
       // Synchronous lock check AND set to prevent race conditions from rapid clicks
       // Must be done atomically at the very start before any async operations
       if (operationInProgress.current) {
@@ -262,9 +266,11 @@ export const useDraft = (_divisionId?: string) => {
           draftStateId: draftStateId.current,
           playerId,
           teamId: currentTeamId,
+          acknowledgeWarnings: options.acknowledgeWarnings,
         });
 
         setDraftState(result.draftState);
+        setPendingRuleWarnings(null);
         setError(null);
 
         // Check if draft is complete
@@ -274,7 +280,13 @@ export const useDraft = (_divisionId?: string) => {
         }
       } catch (err) {
         console.error('Failed to draft player:', err);
-        setError(getErrorMessage(err, 'Failed to draft player. Please try again.'));
+        if (err instanceof ApiError && err.status === 409 && Array.isArray(err.details?.warnings)) {
+          setPendingRuleWarnings({ playerId, warnings: err.details.warnings as PickWarning[] });
+          setError(null);
+        } else {
+          setPendingRuleWarnings(null);
+          setError(getErrorMessage(err, 'Failed to draft player. Please try again.'));
+        }
       } finally {
         operationInProgress.current = false;
         setIsLoading(false);
@@ -283,7 +295,13 @@ export const useDraft = (_divisionId?: string) => {
     [draftState, isLoading]
   );
 
-  const undoLastPick = useCallback(async () => {
+  const confirmOverride = useCallback(async () => {
+    if (pendingRuleWarnings) {
+      await draftPlayer(pendingRuleWarnings.playerId, { acknowledgeWarnings: true });
+    }
+  }, [pendingRuleWarnings, draftPlayer]);
+
+  const undoLastPick = useCallback(async (expectedPick?: number) => {
     // Synchronous lock check to prevent race conditions from rapid clicks
     if (operationInProgress.current) {
       return;
@@ -302,7 +320,7 @@ export const useDraft = (_divisionId?: string) => {
     try {
       operationInProgress.current = true;
       setIsLoading(true);
-      const result = await api.undoLastPick(draftStateId.current);
+      const result = await api.undoLastPick(draftStateId.current, expectedPick ?? draftState.picks[draftState.picks.length - 1]?.pick);
       setDraftState(result.draftState);
       setError(null);
 
@@ -317,7 +335,7 @@ export const useDraft = (_divisionId?: string) => {
       operationInProgress.current = false;
       setIsLoading(false);
     }
-  }, [phase, isLoading]);
+  }, [phase, isLoading, draftState.picks]);
 
   // Skip the current pick (team gets one fewer player)
   const skipPick = useCallback(async () => {
@@ -450,6 +468,9 @@ export const useDraft = (_divisionId?: string) => {
     isLoading,
     error,
     mandatoryPickError,
+    pendingRuleWarnings,
+    clearPendingRuleWarnings,
+    confirmOverride,
     clearMandatoryPickError,
     returnToDraftBoard,
   };

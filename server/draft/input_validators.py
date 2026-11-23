@@ -697,6 +697,8 @@ def validate_draft_pick_data(data: Dict[str, Any]) -> Tuple[Optional[Dict], Opti
         (None, errors) on failure
     """
     errors = {}
+    if not isinstance(data.get("acknowledge_warnings", False), bool):
+        errors["acknowledge_warnings"] = ["Must be a boolean"]
 
     draft_state_id, state_error = validate_uuid_field(data.get("draft_state_id"), "draft_state_id")
     if state_error:
@@ -717,6 +719,7 @@ def validate_draft_pick_data(data: Dict[str, Any]) -> Tuple[Optional[Dict], Opti
         "draft_state_id": draft_state_id,
         "player_id": player_id,
         "team_id": team_id,
+        "acknowledge_warnings": data.get("acknowledge_warnings", False),
     }, None
 
 
@@ -732,7 +735,10 @@ def validate_undo_pick_data(data: Dict[str, Any]) -> Tuple[Optional[Dict], Optio
     if state_error:
         return None, {"draft_state_id": [state_error]}
 
-    return {"draft_state_id": draft_state_id}, None
+    expected_pick = data.get("expected_pick")
+    if expected_pick is not None and (type(expected_pick) is not int or expected_pick < 1):
+        return None, {"expected_pick": ["Must be a positive integer"]}
+    return {"draft_state_id": draft_state_id, "expected_pick": expected_pick}, None
 
 
 def validate_skip_pick_data(data: Dict[str, Any]) -> Tuple[Optional[Dict], Optional[Dict]]:

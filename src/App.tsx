@@ -131,6 +131,10 @@ function App() {
     cancelPendingComplete,
     isLoading,
     mandatoryPickError,
+    error: draftError,
+    pendingRuleWarnings,
+    clearPendingRuleWarnings,
+    confirmOverride,
     clearMandatoryPickError,
     returnToDraftBoard,
   } = useDraft(activeDivision?.id);
@@ -1133,6 +1137,11 @@ function App() {
               onFinalizeDraft: finalizeDraft,
               onCancelComplete: cancelPendingComplete,
             }}
+            error={draftError}
+            pendingRuleWarnings={pendingRuleWarnings}
+            onClearRuleWarnings={clearPendingRuleWarnings}
+            onConfirmOverride={confirmOverride}
+            rosterSize={activeDivision?.rosterSize}
             enforceAgeLimit={activeDivision?.enforceAgeLimit ?? false}
             maxPerAge={activeDivision?.maxPerAge ?? 0}
             ageRange={activeDivision?.ageRange}
