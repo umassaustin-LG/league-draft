@@ -51,7 +51,7 @@ type AlgorithmMode = 'balance-first' | 'requests-first';
 interface TeamBuilderFlowProps {
   division: Division;
   onBack: () => void;
-  onComplete?: (players: Player[], teams: Team[]) => void;
+  onComplete?: (players: Player[], teams: Team[]) => void | Promise<void>;
   onUpdateTeams?: (teams: Team[]) => void;
   onUpdatePlayers?: (players: Player[]) => void;
   onUpdatePhase?: (phase: AppPhase) => void;
@@ -118,6 +118,9 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
   const [requestsFirstResult, setRequestsFirstResult] = useState<RequestsFirstResult | null>(null);
   const [finalPlayers, setFinalPlayers] = useState<Player[]>(hasResults ? division.players : []);
   const [finalTeams, setFinalTeams] = useState<Team[]>(hasResults ? division.teams : []);
+  const [isFinalizing, setIsFinalizing] = useState(false);
+  const [isFinalized, setIsFinalized] = useState(false);
+  const [finalizeError, setFinalizeError] = useState<string | null>(null);
 
   // Swap modal
   const [showSwapModal, setShowSwapModal] = useState(false);
@@ -634,6 +637,7 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
 
   // Handle applying a suggested trade
   const handleApplyTrade = useCallback((trade: TradeCandidate) => {
+    setIsFinalized(false);
     if (!requestsFirstResult) return;
 
     // Mark trade as applied
@@ -700,15 +704,29 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
   // -----------------------------------------------------------------------------
 
   const handleRerun = useCallback(() => {
+    setIsFinalized(false);
+    setFinalizeError(null);
     setStep('generate');
     setAlgorithmResult(null);
   }, []);
 
-  const handleFinalize = useCallback(() => {
-    if (onComplete && algorithmResult) {
-      onComplete(finalPlayers, finalTeams);
+  const handleFinalize = useCallback(async () => {
+    if (isFinalizing) return;
+    setFinalizeError(null);
+    if (!onComplete || !algorithmResult || finalPlayers.length === 0 || finalTeams.length === 0) {
+      setFinalizeError('No team results are available to save. Please run auto-assignment again.');
+      return;
     }
-  }, [onComplete, algorithmResult, finalPlayers, finalTeams]);
+    setIsFinalizing(true);
+    try {
+      await onComplete(finalPlayers, finalTeams);
+      setIsFinalized(true);
+    } catch (err) {
+      setFinalizeError(err instanceof Error ? err.message : 'Failed to save teams. Please try again.');
+    } finally {
+      setIsFinalizing(false);
+    }
+  }, [onComplete, algorithmResult, finalPlayers, finalTeams, isFinalizing]);
 
   // Handle player swap (local, no API)
   const handleSwap = useCallback((
@@ -724,6 +742,7 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
 
     if (!player1 || !player2) return;
 
+    setIsFinalized(false);
     // Update player assignments
     const updatedPlayers = finalPlayers.map(p => {
       if (p.id === player1Id) {
@@ -782,6 +801,7 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <button
             onClick={onBack}
+            disabled={isFinalizing}
             className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -1874,7 +1894,17 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
 
         {/* Step 6: Results */}
         {step === 'results' && algorithmResult && (
-          <div className="space-y-6">
+          <fieldset disabled={isFinalizing} className="space-y-6">
+            {finalizeError && (
+              <p role="alert" className="rounded-lg bg-red-50 dark:bg-red-900/20 p-4 text-red-700 dark:text-red-300">
+                {finalizeError}
+              </p>
+            )}
+            {isFinalized && (
+              <p role="status" className="rounded-lg bg-green-50 dark:bg-green-900/20 p-4 text-green-700 dark:text-green-300">
+                Teams finalized and saved. Return to Divisions to view the saved rosters any time.
+              </p>
+            )}
             <TeamBuilderResults
               result={algorithmResult}
               players={finalPlayers}
@@ -1912,11 +1942,11 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
                 </button>
               </div>
               <button
-                onClick={handleFinalize}
+                onClick={isFinalized ? onBack : handleFinalize}
                 className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-semibold flex items-center gap-2"
               >
                 <Check className="w-5 h-5" />
-                Finalize Teams
+                {isFinalizing ? 'Saving Teams...' : isFinalized ? 'Back to Divisions' : 'Finalize Teams'}
               </button>
             </div>
 
@@ -1929,7 +1959,7 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
                 onClose={() => setShowSwapModal(false)}
               />
             )}
-          </div>
+          </fieldset>
         )}
       </div>
     </div>

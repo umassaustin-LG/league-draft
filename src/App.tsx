@@ -925,6 +925,7 @@ function App() {
         onUpdateTeams={(teams) => updateActiveDivision({ teams })}
         onUpdatePlayers={(players) => updateActiveDivision({ players })}
         onUpdatePhase={(phase) => updateActiveDivision({ phase })}
+        onComplete={(players, teams) => updateActiveDivision({ players, teams })}
       />
     );
   }
