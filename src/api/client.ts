@@ -430,6 +430,7 @@ function transformDivisionSummaryFromApi(data: Record<string, unknown>): Divisio
     // Use safe parsing for numeric fields (Issue #3)
     teamCount: safeParseNumber(data.team_count),
     playerCount: safeParseNumber(data.player_count),
+    hasGeneratedRosters: data.has_generated_rosters === true,
     phase: data.phase as DivisionSummary['phase'],
     createdAt: data.created_at as string,
     // Convert null to undefined (Issue #8)

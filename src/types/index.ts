@@ -411,6 +411,7 @@ export interface DivisionSummary {
   mode: DivisionMode;
   teamCount: number;
   playerCount: number;
+  hasGeneratedRosters: boolean;
   phase: AppPhase;
   createdAt: string;
   completedAt?: string;

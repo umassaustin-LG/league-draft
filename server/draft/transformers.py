@@ -8,6 +8,8 @@ the existing API contract.
 
 from typing import Optional
 
+from django.db.models import Count
+
 
 def transform_organization_membership(membership) -> dict:
     """Transform an OrganizationMembership to dict."""
@@ -169,12 +171,14 @@ def transform_draft_state(draft_state) -> dict:
 
 def transform_division_summary(division) -> dict:
     """Transform a Division to summary dict (for list view)."""
+    counts = division.players.aggregate(total=Count("pk"), assigned=Count("drafted_by_team"))
     result = {
         "id": str(division.id),
         "name": division.name,
         "preset": division.preset,
         "team_count": division.team_count,
-        "player_count": division.players.count(),
+        "player_count": counts["total"],
+        "has_generated_rosters": division.mode == "league-generated" and counts["assigned"] > 0,
         "mode": division.mode,
         "phase": division.phase,
         "created_at": division.created_at.isoformat(),

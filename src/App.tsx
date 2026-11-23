@@ -23,6 +23,7 @@ import { ResetPasswordPage } from './components/ResetPasswordPage';
 import { ProfilePage } from './components/profile';
 import { JoinPage } from './components/JoinPage';
 import { EvaluationAdmin } from './components/evaluation/EvaluationAdmin';
+import { DivisionOverview } from './components/DivisionOverview';
 import { api, isApiMode } from './api';
 import {
   Player,
@@ -37,6 +38,7 @@ import {
   AppPhase,
 } from './types';
 import { parseCSVWithMapping, CoachAssignment } from './utils/csvParser';
+import { canManageDivision, canUsePersonalWorkspace, getDefaultLeagueAdminMembership } from './utils/divisionAccess';
 import { savePlayersToApi, saveTeamsToApi } from './api';
 
 type AppMode = 'selector' | 'creator' | 'draft' | 'settings' | 'join' | 'templates';
@@ -105,8 +107,11 @@ function App() {
     updateActiveDivision,
     deleteDivision,
     clearActiveDivision,
-    refreshDivisions,
-  } = useDivisions();
+    refreshSummaries,
+  } = useDivisions(user?.id);
+  const canEditDivision = !isPublicView && !!activeDivision && canManageDivision(user, activeDivision);
+  const leagueAdminMembership = getDefaultLeagueAdminMembership(user);
+  const canCreateDivision = !isPublicView && (!!leagueAdminMembership || canUsePersonalWorkspace(user));
 
   const {
     phase,
@@ -149,29 +154,14 @@ function App() {
   useEffect(() => {
     if (activeDivision) {
       setMode('draft');
-      loadDivisionState(activeDivision);
+      if (canEditDivision) loadDivisionState(activeDivision);
     }
-  }, [activeDivision, loadDivisionState]);
+  }, [activeDivision, canEditDivision, loadDivisionState]);
 
   // Scroll to top when phase changes
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [phase]);
-
-  // Auto-refresh for public view - listen for localStorage changes from admin view
-  useEffect(() => {
-    if (!isPublicView) return;
-
-    const handleStorageChange = (e: StorageEvent) => {
-      // Only refresh if the change is to a division key
-      if (e.key?.startsWith('little-league-division-')) {
-        refreshDivisions();
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, [isPublicView, refreshDivisions]);
 
   // Track if division state has been loaded (to avoid overwriting API phase with default 'upload')
   const [divisionStateLoaded, setDivisionStateLoaded] = useState(false);
@@ -205,7 +195,7 @@ function App() {
     // Only sync phase changes AFTER the division state has been loaded
     // This prevents the default 'upload' phase from overwriting the API-loaded phase
     // Also prevent concurrent updates (Issue #6)
-    if (divisionStateLoaded && activeDivision && phase !== activeDivision.phase && !isUpdatingPhase.current) {
+    if (canEditDivision && divisionStateLoaded && activeDivision && phase !== activeDivision.phase && !isUpdatingPhase.current) {
       isUpdatingPhase.current = true;
       // When draft completes, save the completion timestamp and final state
       // Note: Don't pass players here - they're already saved by draft pick API
@@ -238,7 +228,7 @@ function App() {
         });
       }
     }
-  }, [phase, activeDivision?.id, divisionStateLoaded]);
+  }, [phase, activeDivision?.id, canEditDivision, divisionStateLoaded]);
 
   // Browser history management - handle back/forward navigation
   // Strategy: Push a state entry on load, and when user presses back,
@@ -731,18 +721,19 @@ function App() {
   }, [checkAuth]);
 
   // Handle join completion
-  const handleJoinComplete = useCallback(() => {
+  const handleJoinComplete = useCallback(async () => {
     // Refresh auth to get updated leagues
-    checkAuth();
+    await checkAuth();
+    await refreshSummaries();
     // Clear join state and go to selector
     setJoinToken(null);
     setMode('selector');
     // Clear URL
     window.history.replaceState({}, '', '/');
-  }, [checkAuth]);
+  }, [checkAuth, refreshSummaries]);
 
   // Show loading state while checking authentication
-  if (isApiMode() && !isInitialized && !isPublicView) {
+  if (isApiMode() && !isInitialized) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
@@ -770,7 +761,7 @@ function App() {
   }
 
   // Show auth pages when in API mode and not authenticated
-  if (isApiMode() && isInitialized && !isAuthenticated && !isPublicView) {
+  if (isApiMode() && isInitialized && !isAuthenticated) {
     // Helper to go back to login and clear URL
     const handleBackToLogin = () => {
       setAuthPage('login');
@@ -814,29 +805,30 @@ function App() {
   }
 
   // Render evaluation admin page
-  if (mode === 'templates') {
+  if (mode === 'templates' && !isPublicView && leagueAdminMembership) {
     return (
       <EvaluationAdmin onBack={() => setMode('selector')} />
     );
   }
 
   // Render division selector or creator
-  if (mode === 'selector') {
+  if (mode === 'selector' || mode === 'templates') {
     return (
       <DivisionSelector
         divisions={summaries}
         onSelectDivision={handleSelectDivision}
-        onCreateNew={() => setMode('creator')}
-        onDeleteDivision={deleteDivision}
+        onCreateNew={canCreateDivision ? () => setMode('creator') : undefined}
+        onDeleteDivision={isPublicView ? undefined : deleteDivision}
+        creationLeagueName={leagueAdminMembership?.organizationName}
         user={user}
         onLogout={isApiMode() ? logout : undefined}
-        onOpenSettings={isApiMode() && user ? () => setMode('settings') : undefined}
-        onOpenTemplates={isApiMode() && user ? () => setMode('templates') : undefined}
+        onOpenSettings={user && !isPublicView ? () => setMode('settings') : undefined}
+        onOpenTemplates={leagueAdminMembership && !isPublicView ? () => setMode('templates') : undefined}
       />
     );
   }
 
-  if (mode === 'creator') {
+  if (mode === 'creator' && canCreateDivision) {
     // Only check names of divisions that have players (non-empty divisions)
     // Empty divisions are not shown to users, so shouldn't block new creation
     const existingNames = summaries
@@ -872,12 +864,28 @@ function App() {
     );
   }
 
+  if (!canEditDivision) {
+    return (
+      <DivisionOverview
+        key={activeDivision.id}
+        initialDivision={activeDivision}
+        onBack={() => {
+          void handleBackToSelector();
+          void refreshSummaries();
+        }}
+      />
+    );
+  }
+
   // Route to Team Builder for league-generated mode
   if (activeDivision.mode === 'league-generated') {
     return (
       <TeamBuilderFlow
         division={activeDivision}
-        onBack={handleBackToSelector}
+        onBack={() => {
+          void handleBackToSelector();
+          void refreshSummaries();
+        }}
         onUpdateTeams={(teams) => updateActiveDivision({ teams })}
         onUpdatePlayers={(players) => updateActiveDivision({ players })}
         onUpdatePhase={(phase) => updateActiveDivision({ phase })}
@@ -1116,16 +1124,18 @@ function App() {
         {phase === 'draft' && (draftState.currentTeamId || pendingComplete || draftState.isDraftComplete) && (
           <DraftBoard
             draftState={draftState}
-            onDraftPlayer={draftPlayer}
-            onSkipPick={skipPick}
-            onUndo={undoLastPick}
-            onReset={handleReset}
+            controls={{
+              onDraftPlayer: draftPlayer,
+              onSkipPick: skipPick,
+              onUndo: undoLastPick,
+              onReset: handleReset,
+              pendingComplete,
+              onFinalizeDraft: finalizeDraft,
+              onCancelComplete: cancelPendingComplete,
+            }}
             enforceAgeLimit={activeDivision?.enforceAgeLimit ?? false}
             maxPerAge={activeDivision?.maxPerAge ?? 0}
             ageRange={activeDivision?.ageRange}
-            pendingComplete={pendingComplete}
-            onFinalizeDraft={finalizeDraft}
-            onCancelComplete={cancelPendingComplete}
             isLoading={isLoading}
             mandatoryPickError={mandatoryPickError}
             onClearMandatoryPickError={clearMandatoryPickError}
