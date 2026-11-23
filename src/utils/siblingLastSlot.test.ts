@@ -45,6 +45,18 @@ const renderBoard = (state: DraftState, rosterSize = 2) => renderToStaticMarkup(
 );
 
 describe('live last-slot sibling recovery', () => {
+  it('does not transfer a retained sibling lock after another team drafts the released sibling', () => {
+    const players = [
+      player('root', { siblingId: 'kept', isDrafted: true, draftedByTeamId: 'a' }),
+      player('kept', { siblingId: 'released', lockedToTeamId: 'a' }),
+      player('released', { siblingId: 'root', isDrafted: true, draftedByTeamId: 'b' }),
+    ];
+    lockSiblingToTeam(players, players[2], 'b');
+    releaseExhaustedSiblingLocks(players, { a: 1, b: 1 });
+    expect(players[1].lockedToTeamId).toBe('a');
+    expect(getMandatoryPick(players, 'a', 2)?.player.id).toBe('kept');
+    expect(getBestAvailable(players, 'b')).toBeNull();
+  });
   it('releases excess locks immediately, keeps one commitment, and explains backend releases', () => {
     const state = finalPickState();
     state.players = [
@@ -183,6 +195,19 @@ describe('simulation last-slot siblings', () => {
       includeCoachKids: false, includeSiblings: false,
     });
     expect(result.players.every(p => p.isDrafted)).toBe(true);
+  });
+
+  it('simulation keeps an existing reservation after a sibling is taken by another team', () => {
+    const players = [
+      player('root', { totalScore: 100, siblingId: 'kept', rank: 2 }),
+      player('kept', { totalScore: 10, siblingId: 'released', lockedToTeamId: 'a', rank: 1 }),
+      player('released', { totalScore: 20, siblingId: 'root', lockedToTeamId: 'b', projectedRound: 1, rank: 3 }),
+      player('single', { totalScore: 50 }),
+    ];
+    const result = runSimulation(players, [team('a', 1), team('b', 2)], ['a', 'b'], 'straight', options);
+    expect(result.players[1].draftedByTeamId).toBe('a');
+    expect(result.players[2].draftedByTeamId).toBe('b');
+    expect(result.players.every(player => player.isDrafted)).toBe(true);
   });
 
   it.each(['straight', 'snake', 'recalculated'] as const)('reserves a future coach kid’s entire sibling group in %s', (format) => {

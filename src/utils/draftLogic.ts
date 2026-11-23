@@ -235,7 +235,7 @@ export function lockSiblingToTeam(
     if (current.siblingId) {
       const sibling = players.find(p => p.id === current.siblingId);
       if (sibling && !sibling.isDrafted && !processed.has(sibling.id)) {
-        sibling.lockedToTeamId = teamId;
+        if (!sibling.lockedToTeamId || sibling.lockedToTeamId === teamId) sibling.lockedToTeamId = teamId;
         processed.add(sibling.id);
         toProcess.push(sibling); // Follow the chain
       }
@@ -244,7 +244,7 @@ export function lockSiblingToTeam(
     // Also check for any players whose siblingId points to current (reverse direction)
     players.forEach(p => {
       if (p.siblingId === current.id && !p.isDrafted && !processed.has(p.id)) {
-        p.lockedToTeamId = teamId;
+        if (!p.lockedToTeamId || p.lockedToTeamId === teamId) p.lockedToTeamId = teamId;
         processed.add(p.id);
         toProcess.push(p); // Follow the chain
       }

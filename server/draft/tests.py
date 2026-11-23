@@ -1290,6 +1290,13 @@ class DraftSafetyTests(CrossTenantTestBase):
         self.state = DraftService.draft_player(self.state.id, self.players[2].id, self.victim_teams[1].id, acknowledge_warnings=True)
         self.players[2].refresh_from_db()
         self.assertEqual(self.players[2].drafted_by_team_id, self.victim_teams[1].id)
+        self.players[1].refresh_from_db()
+        self.assertEqual(self.players[1].locked_to_team_id, self.victim_teams[0].id)
+        self.assertEqual(self.state.mandatory_player_id, self.players[1].id)
+        self.pick(1)
+        self.pick(3)
+        self.assertTrue(self.state.is_draft_complete)
+        self.assertEqual(self.division.players.filter(is_drafted=True).count(), 4)
 
     def test_stale_lock_to_full_team_does_not_block_final_pick(self):
         self.reach_last_sibling()
