@@ -39,6 +39,7 @@ import {
 } from './types';
 import { parseCSVWithMapping, CoachAssignment } from './utils/csvParser';
 import { canManageDivision, canUsePersonalWorkspace, getDefaultLeagueAdminMembership } from './utils/divisionAccess';
+import { getMappingRecoveryPhase } from './utils/importPhase';
 import { savePlayersToApi, saveTeamsToApi } from './api';
 
 type AppMode = 'selector' | 'creator' | 'draft' | 'settings' | 'join' | 'templates';
@@ -161,6 +162,20 @@ function App() {
       if (canEditDivision) loadDivisionState(activeDivision);
     }
   }, [activeDivision, canEditDivision, loadDivisionState]);
+
+  // CSV data is in memory only; resuming a division saved mid-mapping needs a fresh upload
+  const [csvUploadLost, setCSVUploadLost] = useState(false);
+  useEffect(() => {
+    const recoveryPhase = getMappingRecoveryPhase(phase, !!csvData);
+    if (recoveryPhase) {
+      setImportMode(null);
+      setDualCSVVerification(null);
+      setCSVUploadLost(true);
+      setPhase(recoveryPhase);
+    } else if (phase !== 'upload') {
+      setCSVUploadLost(false);
+    }
+  }, [phase, csvData, setPhase]);
 
   // Scroll to top when phase changes
   useEffect(() => {
@@ -633,6 +648,7 @@ function App() {
     setMode('selector');
     setCSVData(null);
     setImportMode(null);
+    setCSVUploadLost(false);
   };
 
   // Handle going back one step at a time
@@ -973,6 +989,15 @@ function App() {
                 >
                   ← {importMode ? 'Back to Import Selection' : 'Back to Divisions'}
                 </button>
+              </div>
+            )}
+
+            {csvUploadLost && !importMode && (
+              <div
+                role="status"
+                className="bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800 px-4 py-3 text-sm text-amber-800 dark:text-amber-200"
+              >
+                Your CSV upload isn't saved between visits, so column mapping can't be resumed. Please upload the file again.
               </div>
             )}
 
