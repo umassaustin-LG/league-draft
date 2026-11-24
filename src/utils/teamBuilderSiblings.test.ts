@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Team } from '../types';
+import { ResolvedRequest, Team } from '../types';
 import {
   DEFAULT_TEAM_BUILDER_CONFIG,
   runRequestsFirstAlgorithm,
@@ -24,6 +24,29 @@ const makePlayers = (): TeamBuilderPlayer[] => [
   birthday: '', isAllStar: false, isDNE: false, isCoachKid: false, isDrafted: false,
   ...(i === 2 ? { siblingId: 'p4' } : i === 3 ? { siblingId: 'p3' } : {}),
 }));
+
+it('keeps a two-way cluster together on a team with room for the entire cluster within even-roster limits', () => {
+  const players = makePlayers().slice(0, 7);
+  for (const index of [0, 1, 4]) {
+    players[index].lockedToTeamId = 't1';
+    players[index].totalScore = 0;
+  }
+  players[5].isCoachKid = true;
+  players[5].coachTeamId = 't2';
+  delete players[2].siblingId;
+  delete players[3].siblingId;
+  const requests: ResolvedRequest[] = [['p3', 'p4'], ['p4', 'p3']].map(([playerId, target]) => ({
+    id: playerId, playerId, requestType: 'teammate', rawRequestString: target,
+    resolvedTargetId: target, resolvedTargetName: target, status: 'user-confirmed', confidenceScore: 1, isTwoWay: true,
+  }));
+  const result = runRequestsFirstAlgorithm(players, makeTeams(2), requests, {
+    ...DEFAULT_TEAM_BUILDER_CONFIG, minRosterSize: 2, maxRosterSize: 5, forceEvenTeams: true,
+  });
+  expect(result.assignments.filter(a => ['p3', 'p4'].includes(a.playerId)))
+    .toEqual(expect.arrayContaining(['p3', 'p4'].map(playerId => expect.objectContaining({ playerId, teamId: 't2', reason: 'two-way-friend' }))));
+  expect(result.assignments).toHaveLength(7);
+  expect(result.warnings).toEqual([]);
+});
 
 describe.each(['balance-first', 'requests-first'] as const)('%s confirmed siblings', mode => {
   const run = (players = makePlayers(), overrides: Partial<TeamBuilderConfig> = {}, teams = makeTeams()) => {

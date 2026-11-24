@@ -1039,7 +1039,7 @@ export function runRequestsFirstAlgorithm(
     for (const team of workingTeams) {
       if (!canAcceptPlayer(team)) continue;
       // Check if team can fit all unassigned cluster members
-      const remainingCapacity = fullConfig.maxRosterSize - team.assignedPlayerIds.length;
+      const remainingCapacity = getMaxSizeForTeam(team) - team.assignedPlayerIds.length;
       if (remainingCapacity < unassignedInCluster.length) continue;
 
       let score = 0;
@@ -1069,8 +1069,8 @@ export function runRequestsFirstAlgorithm(
       const teamsWithCapacity = workingTeams
         .filter(canAcceptPlayer)
         .sort((a, b) => {
-          const capA = fullConfig.maxRosterSize - a.assignedPlayerIds.length;
-          const capB = fullConfig.maxRosterSize - b.assignedPlayerIds.length;
+          const capA = getMaxSizeForTeam(a) - a.assignedPlayerIds.length;
+          const capB = getMaxSizeForTeam(b) - b.assignedPlayerIds.length;
           return capB - capA;
         });
       bestTeam = teamsWithCapacity[0] || null;
