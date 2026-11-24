@@ -74,6 +74,25 @@ describe.each(['balance-first', 'requests-first'] as const)('%s confirmed siblin
     expect(result.teamSummaries.map(t => t.rosterCount)).toEqual([2, 2, 2, 2, 2]);
   });
 
+  it('places a lower-scoring anchored group before an unpinned pair can consume its coach team’s seats', () => {
+    const players = makePlayers().slice(0, 9);
+    for (const [index, teamId] of [[0, 't2'], [1, 't3'], [6, 't1']] as const) {
+      players[index].isCoachKid = true;
+      players[index].coachTeamId = teamId;
+    }
+    players[6].siblingId = 'p8';
+    players[7].siblingId = 'p7';
+    const result = run(players, { maxRosterSize: 3 }, makeTeams(3));
+    expect(result.assignments.find(a => a.playerId === 'p7')?.teamId).toBe('t1');
+    expect(result.assignments.find(a => a.playerId === 'p8')?.teamId).toBe('t1');
+    expect(result.assignments.find(a => a.playerId === 'p3')?.teamId)
+      .toBe(result.assignments.find(a => a.playerId === 'p4')?.teamId);
+    expect(result.assignments.find(a => a.playerId === 'p3')?.teamId).not.toBe('t1');
+    expect(result.assignments).toHaveLength(9);
+    expect(result.teamSummaries.map(t => t.rosterCount)).toEqual([3, 3, 3]);
+    expect(result.warnings).toEqual([]);
+  });
+
   it('preserves manual anchors and unrelated pinned players through minimum-roster repair', () => {
     const players = makePlayers();
     players[2].lockedToTeamId = 't4';

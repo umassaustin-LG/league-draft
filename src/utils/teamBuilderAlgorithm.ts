@@ -241,6 +241,7 @@ function placeSiblingGroups(
   }
   const visited = new Set<string>();
   const blocked = new Set<string>();
+  const groups: { members: TeamBuilderPlayer[]; anchors: Set<string> }[] = [];
   for (const player of [...players].sort((a, b) => b.totalScore - a.totalScore)) {
     if (visited.has(player.id)) continue;
     const group: TeamBuilderPlayer[] = [];
@@ -257,7 +258,6 @@ function placeSiblingGroups(
       }
     }
     if (group.length < 2) continue;
-    const remaining = group.filter(member => unassigned.has(member.id));
     const anchors = new Set<string>();
     for (const member of group) {
       const assignedTeam = teams.find(team => team.assignedPlayerIds.includes(member.id));
@@ -265,6 +265,11 @@ function placeSiblingGroups(
       if (member.isCoachKid && member.coachTeamId) anchors.add(member.coachTeamId);
       if (member.lockedToTeamId) anchors.add(member.lockedToTeamId);
     }
+    groups.push({ members: group, anchors });
+  }
+  groups.sort((a, b) => Number(b.anchors.size > 0) - Number(a.anchors.size > 0));
+  for (const { members: group, anchors } of groups) {
+    const remaining = group.filter(member => unassigned.has(member.id));
     const team = anchors.size > 1 ? undefined : [...teams]
       .filter(team => (!anchors.size || anchors.has(team.id))
         && team.assignedPlayerIds.length + remaining.length <= capacity(team))
