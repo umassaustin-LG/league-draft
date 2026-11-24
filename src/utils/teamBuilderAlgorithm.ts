@@ -923,7 +923,7 @@ export function runRequestsFirstAlgorithm(
     }
     const teamsWithExtra = workingTeams.filter(t => t.assignedPlayerIds.length > baseRosterSize).length;
     const canHaveExtra = team.assignedPlayerIds.length > baseRosterSize || teamsWithExtra < extraPlayers;
-    return baseRosterSize + Number(canHaveExtra);
+    return Math.min(fullConfig.maxRosterSize, baseRosterSize + Number(canHaveExtra));
   };
 
   // Helper to check if team can accept more players

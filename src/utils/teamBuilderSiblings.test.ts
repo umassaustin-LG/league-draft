@@ -74,6 +74,17 @@ describe.each(['balance-first', 'requests-first'] as const)('%s confirmed siblin
     expect(result.teamSummaries.map(t => t.rosterCount)).toEqual([2, 2, 2, 2, 2]);
   });
 
+  it('rejects the entire group when the even-roster target exceeds the hard cap', () => {
+    const players = makePlayers();
+    players[3].siblingId = 'p5';
+    players[4].siblingId = 'p3';
+    const result = run(players, { maxRosterSize: 2, forceEvenTeams: true }, makeTeams(2));
+    expect(result.assignments.filter(a => ['p3', 'p4', 'p5'].includes(a.playerId))).toEqual([]);
+    expect(result.teamSummaries.every(t => t.rosterCount <= 2)).toBe(true);
+    expect(result.warnings.some(w => w.includes('could not be placed together'))).toBe(true);
+    expect(result.warnings.some(w => w.includes('is full, cannot assign'))).toBe(false);
+  });
+
   it('lets the anchored team claim the extra even-roster seat regardless of team order', () => {
     const players = makePlayers().slice(0, 7);
     players[2].isCoachKid = true;
