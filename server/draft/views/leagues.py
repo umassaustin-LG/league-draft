@@ -314,7 +314,7 @@ def accept_invitation(request):
         LeagueMembership.objects.create(
             user=request.user,
             organization=league,
-            role="member",
+            role="viewer",
         )
         return json_response({
             "message": "Successfully joined the league",
@@ -348,7 +348,7 @@ def accept_invitation(request):
         )
 
     # Check if already a member
-    if LeagueMembership.objects.filter(user=request.user, league=invitation.league).exists():
+    if LeagueMembership.objects.filter(user=request.user, organization=invitation.organization).exists():
         invitation.accepted_at = timezone.now()
         invitation.save()
         return json_response(
@@ -359,7 +359,7 @@ def accept_invitation(request):
     # Create membership
     LeagueMembership.objects.create(
         user=request.user,
-        league=invitation.league,
+        organization=invitation.organization,
         role=invitation.role,
     )
 
@@ -368,8 +368,8 @@ def accept_invitation(request):
 
     return json_response({
         "message": "Successfully joined the league",
-        "league_id": str(invitation.league.id),
-        "league_name": invitation.league.name,
+        "league_id": str(invitation.organization.id),
+        "league_name": invitation.organization.name,
     })
 
 
@@ -450,12 +450,12 @@ def public_join_link_view(request, token):
     invitation = LeagueInvitation.objects.filter(
         token=token,
         accepted_at__isnull=True,
-    ).select_related("league", "invited_by").first()
+    ).select_related("organization", "invited_by").first()
 
     if invitation and not invitation.is_expired:
         return json_response({
-            "league_name": invitation.league.name,
-            "league_slug": invitation.league.slug,
+            "league_name": invitation.organization.name,
+            "league_slug": invitation.organization.slug,
             "type": "email_invitation",
             "invited_by": invitation.invited_by.email if invitation.invited_by else None,
             "role": invitation.role,

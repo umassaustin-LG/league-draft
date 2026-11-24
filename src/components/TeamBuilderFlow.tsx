@@ -601,7 +601,7 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
 
     } else {
       // Run balance-first algorithm (original)
-      result = runTeamBuilderAlgorithm(teamBuilderPlayers, teams, config);
+      result = runTeamBuilderAlgorithm(teamBuilderPlayers, teams, config, resolvedRequests);
       setRequestsFirstResult(null);
     }
 

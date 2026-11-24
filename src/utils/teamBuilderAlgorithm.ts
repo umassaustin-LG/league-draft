@@ -23,6 +23,7 @@ import {
   TradeCandidate,
 } from '../types';
 import { buildRequestClusters, splitOversizedCluster } from './teamBuilderParser';
+import { getTeamDisplayName } from './teamUtils';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -124,6 +125,100 @@ export interface TeamSummary {
   meanDeltaPercent: number; // As percentage of mean average
 }
 
+export function fillMinimumRosters(
+  players: TeamBuilderPlayer[],
+  teams: TeamBuilderTeam[],
+  assignments: AssignmentResult[],
+  config: Pick<TeamBuilderConfig, 'minRosterSize' | 'maxRosterSize' | 'forceEvenTeams'>,
+  warnings: string[],
+  requests: ResolvedRequest[] = []
+) {
+  if (teams.length === 0) return;
+  const minimum = Math.min(
+    config.maxRosterSize,
+    Math.max(1, config.minRosterSize),
+    Math.max(1, Math.floor(assignments.length / teams.length))
+  );
+  const maximum = config.forceEvenTeams
+    ? Math.min(config.maxRosterSize, Math.ceil(players.length / teams.length))
+    : config.maxRosterSize;
+  const groups: TeamBuilderPlayer[][] = [];
+  const assignedTeams = new Map(assignments.map(assignment => [assignment.playerId, assignment.teamId]));
+  const preferences = new Map<string, { playerId: string; targetId: string; type: 'coach' | 'teammate' }>();
+  const addPreference = (playerId: string, targetId: string, type: 'coach' | 'teammate') => {
+    preferences.set(`${playerId}:${type}:${targetId}`, { playerId, targetId, type });
+  };
+  for (const request of requests) {
+    if (request.resolvedTargetId && ['auto-confirmed', 'user-confirmed'].includes(request.status)) {
+      addPreference(request.playerId, request.resolvedTargetId, request.requestType);
+    }
+  }
+  const visited = new Set<string>();
+  for (const player of players) {
+    if (visited.has(player.id)) continue;
+    const group = [player];
+    visited.add(player.id);
+    for (let i = 0; i < group.length; i++) {
+      for (const sibling of players) {
+        if (!visited.has(sibling.id) && (
+          sibling.siblingId === group[i].id || group[i].siblingId === sibling.id
+        )) {
+          visited.add(sibling.id);
+          group.push(sibling);
+        }
+      }
+    }
+    groups.push(group);
+  }
+
+  for (const recipient of [...teams].sort((a, b) => a.assignedPlayerIds.length - b.assignedPlayerIds.length)) {
+    while (recipient.assignedPlayerIds.length < minimum) {
+      const deficit = minimum - recipient.assignedPlayerIds.length;
+      const requestLoss = (group: TeamBuilderPlayer[]) => {
+        const moving = new Set(group.map(player => player.id));
+        let lost = 0;
+        for (const { playerId, targetId, type } of preferences.values()) {
+          const before = assignedTeams.get(playerId);
+          const targetBefore = type === 'coach' ? targetId : assignedTeams.get(targetId);
+          const after = moving.has(playerId) ? recipient.id : before;
+          const targetAfter = type === 'teammate' && moving.has(targetId) ? recipient.id : targetBefore;
+          if (before && before === targetBefore && after !== targetAfter) lost++;
+        }
+        return lost;
+      };
+      const group = [...groups].sort((a, b) =>
+        Number(b.length === deficit) - Number(a.length === deficit) ||
+        requestLoss(a) - requestLoss(b) ||
+        Math.abs(a.length - deficit) - Math.abs(b.length - deficit)
+      ).find(group => {
+        if (group.some(player => player.isCoachKid || player.lockedToTeamId)) return false;
+        if (recipient.assignedPlayerIds.length + group.length > maximum) return false;
+        const donor = teams.find(team => team.assignedPlayerIds.includes(group[0].id));
+        return donor && donor !== recipient &&
+          donor.assignedPlayerIds.length - group.length >= minimum &&
+          group.every(player => donor.assignedPlayerIds.includes(player.id));
+      });
+      if (!group) break;
+      const donor = teams.find(team => team.assignedPlayerIds.includes(group[0].id))!;
+      for (const player of group) {
+        donor.assignedPlayerIds = donor.assignedPlayerIds.filter(id => id !== player.id);
+        donor.currentScore -= player.totalScore;
+        recipient.assignedPlayerIds.push(player.id);
+        recipient.currentScore += player.totalScore;
+        const assignment = assignments.find(assignment => assignment.playerId === player.id)!;
+        assignment.teamId = recipient.id;
+        assignment.reason = 'balance';
+        assignedTeams.set(player.id, recipient.id);
+      }
+    }
+  }
+  for (const team of teams) {
+    if (team.assignedPlayerIds.length < Math.max(1, config.minRosterSize)) {
+      warnings.push(`${getTeamDisplayName(team)} has ${team.assignedPlayerIds.length} players, below the minimum of ${Math.max(1, config.minRosterSize)}. Not enough movable players; review roster limits and locked assignments.`);
+    }
+  }
+}
+
 // -----------------------------------------------------------------------------
 // Main Algorithm
 // -----------------------------------------------------------------------------
@@ -134,7 +229,8 @@ export interface TeamSummary {
 export function runTeamBuilderAlgorithm(
   players: TeamBuilderPlayer[],
   teams: Team[],
-  config: TeamBuilderConfig = DEFAULT_TEAM_BUILDER_CONFIG
+  config: TeamBuilderConfig = DEFAULT_TEAM_BUILDER_CONFIG,
+  resolvedRequests: ResolvedRequest[] = []
 ): TeamBuilderResult {
   const warnings: string[] = [];
   const assignments: AssignmentResult[] = [];
@@ -485,6 +581,8 @@ export function runTeamBuilderAlgorithm(
   // Calculate results
   // =========================================================================
 
+  fillMinimumRosters(players, workingTeams, assignments, config, warnings, resolvedRequests);
+
   // Team summaries - use average scores for balance comparison since teams may have different sizes
   const teamAverages = workingTeams.map(team => ({
     team,
@@ -501,7 +599,7 @@ export function runTeamBuilderAlgorithm(
     const averageScore = rosterCount > 0 ? team.currentScore / rosterCount : 0;
     return {
       teamId: team.id,
-      teamName: team.teamName || team.headCoach,
+      teamName: getTeamDisplayName(team),
       coachName: team.headCoach,
       rosterCount,
       totalScore: team.currentScore,
@@ -1127,6 +1225,8 @@ export function runRequestsFirstAlgorithm(
   // PHASE 4: Calculate suggested trades for balance
   // =========================================================================
 
+  fillMinimumRosters(players, workingTeams, assignments, fullConfig, warnings, resolvedRequests);
+
   return summarizeTeamBuilderAssignments(players, workingTeams, assignments, resolvedRequests, fullConfig, warnings, clusters);
 }
 
@@ -1182,7 +1282,7 @@ export function summarizeTeamBuilderAssignments(
     const averageScore = rosterCount > 0 ? team.currentScore / rosterCount : 0;
     return {
       teamId: team.id,
-      teamName: team.teamName || team.headCoach,
+      teamName: getTeamDisplayName(team),
       coachName: team.headCoach,
       rosterCount,
       totalScore: team.currentScore,
