@@ -74,6 +74,20 @@ describe.each(['balance-first', 'requests-first'] as const)('%s confirmed siblin
     expect(result.teamSummaries.map(t => t.rosterCount)).toEqual([2, 2, 2, 2, 2]);
   });
 
+  it('lets the anchored team claim the extra even-roster seat regardless of team order', () => {
+    const players = makePlayers().slice(0, 7);
+    players[2].isCoachKid = true;
+    players[2].coachTeamId = 't3';
+    players[3].siblingId = 'p5';
+    players[4].siblingId = 'p3';
+    const result = run(players, { maxRosterSize: 3, forceEvenTeams: true }, makeTeams(3));
+    expect(result.assignments.filter(a => ['p3', 'p4', 'p5'].includes(a.playerId)))
+      .toEqual(expect.arrayContaining(['p3', 'p4', 'p5'].map(playerId => expect.objectContaining({ playerId, teamId: 't3' }))));
+    expect(result.assignments).toHaveLength(7);
+    expect(result.teamSummaries.map(t => t.rosterCount)).toEqual([2, 2, 3]);
+    expect(result.warnings).toEqual([]);
+  });
+
   it('places a lower-scoring anchored group before an unpinned pair can consume its coach team’s seats', () => {
     const players = makePlayers().slice(0, 9);
     for (const [index, teamId] of [[0, 't2'], [1, 't3'], [6, 't1']] as const) {

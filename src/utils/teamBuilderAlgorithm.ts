@@ -917,22 +917,18 @@ export function runRequestsFirstAlgorithm(
   const totalPlayers = players.length;
   const baseRosterSize = Math.floor(totalPlayers / numTeams);
   const extraPlayers = totalPlayers % numTeams;
-  // Some teams get baseRosterSize + 1, others get baseRosterSize
-  // Teams are filled in order, so first `extraPlayers` teams get the extra player
-
-  // Helper to get max size for a team when forceEvenTeams is enabled
-  const getMaxSizeForTeam = (teamIndex: number): number => {
+  const getMaxSizeForTeam = (team: TeamBuilderTeam): number => {
     if (!fullConfig.forceEvenTeams) {
       return fullConfig.maxRosterSize;
     }
-    // First `extraPlayers` teams get one extra player
-    return teamIndex < extraPlayers ? baseRosterSize + 1 : baseRosterSize;
+    const teamsWithExtra = workingTeams.filter(t => t.assignedPlayerIds.length > baseRosterSize).length;
+    const canHaveExtra = team.assignedPlayerIds.length > baseRosterSize || teamsWithExtra < extraPlayers;
+    return baseRosterSize + Number(canHaveExtra);
   };
 
   // Helper to check if team can accept more players
   const canAcceptPlayer = (team: TeamBuilderTeam): boolean => {
-    const teamIndex = workingTeams.indexOf(team);
-    const maxSize = getMaxSizeForTeam(teamIndex);
+    const maxSize = getMaxSizeForTeam(team);
     return team.assignedPlayerIds.length < maxSize;
   };
 
@@ -992,7 +988,7 @@ export function runRequestsFirstAlgorithm(
   }
 
   const blockedSiblingIds = placeSiblingGroups(players, workingTeams, unassignedPlayers, assignPlayer,
-    team => getMaxSizeForTeam(workingTeams.indexOf(team)), warnings);
+    getMaxSizeForTeam, warnings);
 
   // =========================================================================
   // PHASE 1: Build and place two-way request clusters
