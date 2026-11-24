@@ -267,7 +267,9 @@ function placeSiblingGroups(
     }
     groups.push({ members: group, anchors });
   }
-  groups.sort((a, b) => Number(b.anchors.size > 0) - Number(a.anchors.size > 0));
+  groups.sort((a, b) => Number(b.anchors.size > 0) - Number(a.anchors.size > 0)
+    || b.members.length - a.members.length
+    || Math.max(...b.members.map(member => member.totalScore)) - Math.max(...a.members.map(member => member.totalScore)));
   for (const { members: group, anchors } of groups) {
     const remaining = group.filter(member => unassigned.has(member.id));
     const team = anchors.size > 1 ? undefined : [...teams]

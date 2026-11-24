@@ -74,6 +74,39 @@ describe.each(['balance-first', 'requests-first'] as const)('%s confirmed siblin
     expect(result.teamSummaries.map(t => t.rosterCount)).toEqual([2, 2, 2, 2, 2]);
   });
 
+  it('places a trio before a higher-scoring pair consumes the extra even-roster seat', () => {
+    const players = makePlayers().slice(0, 7);
+    players[0].lockedToTeamId = 't2';
+    players[1].lockedToTeamId = 't2';
+    players[4].siblingId = 'p6';
+    players[5].siblingId = 'p7';
+    players[6].siblingId = 'p5';
+    const result = run(players, { forceEvenTeams: true, maxRosterSize: 4 }, makeTeams(2));
+    expect(result.assignments).toHaveLength(7);
+    expect(result.assignments.filter(a => ['p5', 'p6', 'p7'].includes(a.playerId)).map(a => a.teamId))
+      .toEqual(['t1', 't1', 't1']);
+    expect(result.assignments.filter(a => ['p3', 'p4'].includes(a.playerId)).map(a => a.teamId))
+      .toEqual(['t2', 't2']);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('reserves the only team with room for a trio before placing a higher-scoring pair', () => {
+    const players = makePlayers().slice(0, 9);
+    players[0].isCoachKid = true;
+    players[0].coachTeamId = 't2';
+    players[1].isCoachKid = true;
+    players[1].coachTeamId = 't3';
+    players[4].siblingId = 'p6';
+    players[5].siblingId = 'p7';
+    players[6].siblingId = 'p5';
+    const result = run(players, { maxRosterSize: 3 }, makeTeams(3));
+    expect(result.assignments).toHaveLength(9);
+    expect(result.assignments.filter(a => ['p5', 'p6', 'p7'].includes(a.playerId)).map(a => a.teamId))
+      .toEqual(['t1', 't1', 't1']);
+    expect(new Set(result.assignments.filter(a => ['p3', 'p4'].includes(a.playerId)).map(a => a.teamId)).size).toBe(1);
+    expect(result.warnings).toEqual([]);
+  });
+
   it('rejects the entire group when the even-roster target exceeds the hard cap', () => {
     const players = makePlayers();
     players[3].siblingId = 'p5';
