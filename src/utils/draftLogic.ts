@@ -146,6 +146,7 @@ export function getMandatoryPick(
   if (options.includeSiblings) {
     const siblingToDraft = players.find((p) => {
       if (p.isDrafted || !p.siblingId || (options.includeCoachKids && p.isCoachKid && p.coachTeamId && p.coachTeamId !== teamId)) return false;
+      if (p.lockedToTeamId && p.lockedToTeamId !== teamId) return false;
 
       // If locked to this team, must draft in their lockedToRound or projectedRound
       if (p.lockedToTeamId === teamId) {

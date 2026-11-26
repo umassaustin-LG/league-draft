@@ -30,6 +30,14 @@ const family = () => [
 const config = { enforceAgeLimit: false, maxPerAge: 0, ageRange: { min: 7, max: 10 }, rosterSize: 2, teamCount: 5, teams };
 
 describe('coach assignment takes precedence over sibling locks', () => {
+  it('does not turn another team’s reserved sibling into a legacy mandatory pick after a split', () => {
+    const players = [player('Reserved', { siblingId: 'Released', sibling: 'Released', lockedToTeamId: 't1' }),
+      player('Released', { siblingId: 'Reserved', isDrafted: true, draftedByTeamId: 't2' })];
+    expect(getMandatoryPick(players, 't2', 2)).toBeNull();
+    expect(getMandatoryPick(players, 't1', 2)?.player.id).toBe('Reserved');
+    players[0].lockedToTeamId = undefined;
+    expect(getMandatoryPick(players, 't2', 2)?.player.id).toBe('Reserved');
+  });
   it('reserves the last seat for an own coach kid without counting its own lock twice', () => {
     const players = [player('child', { isCoachKid: true, coachTeamId: 't1', lockedToTeamId: 't1' }),
       player('sibling', { lockedToTeamId: 't1' })];
