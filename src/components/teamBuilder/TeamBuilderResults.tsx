@@ -195,7 +195,7 @@ export const TeamBuilderResults = ({
           </div>
           <div className="text-center">
             <div className="text-2xl font-bold text-green-600 dark:text-green-400">
-              {result.stats.coachRequestsTotal + result.stats.oneWayRequestsTotal + result.stats.twoWayRequestsTotal === 0
+              {result.stats.requestingPlayers === 0
                 ? 'No requests'
                 : `${Math.round(result.stats.averageHappiness * 100)}%`}
             </div>

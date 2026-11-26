@@ -19,6 +19,38 @@ const requests: ResolvedRequest[] = [{
 }];
 
 describe('results after roster edits', () => {
+  it('counts confirmed requests from unassigned players as unsatisfied', () => {
+    const allRequests = [requests[0], { ...requests[0], id: 'r2', playerId: 'p2', resolvedTargetId: 't1' }];
+    const result = summarizeTeamBuilderAssignments(players, teams, assignments.slice(0, 2), allRequests);
+    expect(result.stats.requestingPlayers).toBe(2);
+    expect(result.stats.coachRequestsTotal).toBe(2);
+    expect(result.stats.averageHappiness).toBe(0.5);
+    expect(result.playerHappiness.find(h => h.playerId === 'p2')?.score).toBe('none');
+    const html = renderToStaticMarkup(createElement(TeamBuilderResults, { result, players }));
+    expect(html).toContain('50%');
+    expect(html).not.toContain('No requests');
+    const unassigned = summarizeTeamBuilderAssignments(players, teams, [], allRequests);
+    expect(unassigned.stats.averageHappiness).toBe(0);
+    expect(unassigned.stats.coachRequestsHonored).toBe(0);
+  });
+
+  it.each(['needs-review', 'unresolvable'] as const)('does not call %s requests absent or include them in the percentage', status => {
+    const pending = { ...requests[0], playerId: 'p2', id: 'pending', status, resolvedTargetId: null };
+    const result = summarizeTeamBuilderAssignments(players, teams, assignments.slice(0, 2), [requests[0], pending]);
+    expect(result.stats.requestingPlayers).toBe(2);
+    expect(result.stats.averageHappiness).toBe(1);
+    expect(result.stats.coachRequestsTotal).toBe(1);
+    const onlyPending = summarizeTeamBuilderAssignments(players, teams, [], [pending]);
+    const html = renderToStaticMarkup(createElement(TeamBuilderResults, { result: onlyPending, players }));
+    expect(html).not.toContain('No requests');
+    expect(onlyPending.stats.coachRequestsTotal).toBe(0);
+  });
+
+  it('recognizes raw requests even before they have resolution records', () => {
+    const raw = [{ ...players[0], teammateRequests: ['Blake'], coachRequest: 'Pine' }];
+    expect(summarizeTeamBuilderAssignments(raw, teams, [], []).stats.requestingPlayers).toBe(1);
+  });
+
   it('shows no requests rather than a perfect happiness score for incomplete rosters', () => {
     const result = summarizeTeamBuilderAssignments(players, teams, assignments.slice(0, 1), []);
     const html = renderToStaticMarkup(createElement(TeamBuilderResults, { result, players }));
