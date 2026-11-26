@@ -935,6 +935,29 @@ class CrossTenantTestBase(TestCase):
         ]
 
 
+class ActiveOrganizationTests(CrossTenantTestBase):
+    def test_multiple_memberships_list_divisions_for_selected_organization(self):
+        OrganizationMembership.objects.create(
+            user=self.victim_admin, organization=self.attacker_org, role="viewer"
+        )
+        other_division = _make_division(self.attacker_org, "Other AA")
+        self.client.force_login(self.victim_admin)
+        for organization, division in [(self.victim_org, self.victim_division), (self.attacker_org, other_division)]:
+            response = self.client.get("/api/divisions/", HTTP_X_ORGANIZATION_ID=str(organization.id))
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual([item["id"] for item in response.json()], [str(division.id)])
+
+    def test_nonmember_header_is_ignored_and_single_membership_still_defaults(self):
+        self.client.force_login(self.attacker)
+        response = self.client.get("/api/divisions/", HTTP_X_ORGANIZATION_ID=str(self.victim_org.id))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), [])
+        self.client.force_login(self.victim_admin)
+        response = self.client.get("/api/divisions/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item["id"] for item in response.json()], [str(self.victim_division.id)])
+
+
 class TeamBuilderAccessTests(CrossTenantTestBase):
     def _post(self, user, action, body):
         self.client.force_login(user)

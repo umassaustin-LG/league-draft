@@ -13,6 +13,8 @@ interface DivisionSelectorProps {
   onLogout?: () => void;
   onOpenSettings?: () => void;
   onOpenTemplates?: () => void;
+  activeOrganizationId?: string | null;
+  onSwitchOrganization?: (organizationId: string) => void;
 }
 
 function getPhaseLabel(phase: AppPhase): string {
@@ -57,6 +59,8 @@ export const DivisionSelector = ({
   onLogout,
   onOpenSettings,
   onOpenTemplates,
+  activeOrganizationId,
+  onSwitchOrganization,
 }: DivisionSelectorProps) => {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
@@ -87,6 +91,20 @@ export const DivisionSelector = ({
         {/* User Header */}
         {user && onLogout && (
           <div className="flex items-center justify-end gap-4 mb-4 px-1">
+            {user.organizations.length > 1 && onSwitchOrganization && (
+              <label className="text-sm text-gray-600 dark:text-gray-400">
+                League
+                <select aria-label="Active league" value={activeOrganizationId ?? ''}
+                  onChange={event => onSwitchOrganization(event.target.value)}
+                  className="ml-2 rounded border p-2 dark:bg-gray-800">
+                  {user.organizations.map(membership => (
+                    <option key={membership.organizationId} value={membership.organizationId}>
+                      {membership.organizationName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
               <User className="w-4 h-4" />
               <span>{user.email}</span>

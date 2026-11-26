@@ -1,8 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { api, ApiError, setSessionExpiredCallback } from '../api/client';
 import type { User, LoginCredentials, RegisterData } from '../types';
+import { selectActiveOrganization } from '../api/activeOrganization';
 
 interface AuthState {
+  activeOrganizationId: string | null;
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
@@ -13,7 +15,8 @@ interface AuthContextType extends AuthState {
   login: (credentials: LoginCredentials) => Promise<void>;
   register: (data: RegisterData) => Promise<void>;
   logout: () => Promise<void>;
-  checkAuth: () => Promise<void>;
+  checkAuth: (preferredOrganizationId?: string) => Promise<void>;
+  switchOrganization: (organizationId: string) => void;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -32,6 +35,7 @@ interface AuthProviderProps {
 
 export function AuthProvider({ children }: AuthProviderProps) {
   const [state, setState] = useState<AuthState>({
+    activeOrganizationId: null,
     user: null,
     isAuthenticated: false,
     isLoading: false,
@@ -41,20 +45,24 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // Track if we've already handled session expiry to avoid loops (Issue #4)
   const sessionExpiredHandled = useRef(false);
 
-  const checkAuth = useCallback(async () => {
+  const checkAuth = useCallback(async (preferredOrganizationId?: string) => {
     try {
       const user = await api.getCurrentUser();
+      const activeOrganizationId = selectActiveOrganization(user, preferredOrganizationId);
       setState(prev => ({
         ...prev,
         user,
+        activeOrganizationId,
         isAuthenticated: true,
         isLoading: false,
       }));
     } catch (error) {
+      selectActiveOrganization(null);
       // Not authenticated or error - clear state
       setState(prev => ({
         ...prev,
         user: null,
+        activeOrganizationId: null,
         isAuthenticated: false,
         isLoading: false,
       }));
@@ -67,9 +75,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
     setState(prev => ({ ...prev, isLoading: true }));
     try {
       const user = await api.login(credentials);
+      const activeOrganizationId = selectActiveOrganization(user);
       setState(prev => ({
         ...prev,
         user,
+        activeOrganizationId,
         isAuthenticated: true,
         isLoading: false,
       }));
@@ -88,9 +98,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
     setState(prev => ({ ...prev, isLoading: true }));
     try {
       const user = await api.register(data);
+      const activeOrganizationId = selectActiveOrganization(user);
       setState(prev => ({
         ...prev,
         user,
+        activeOrganizationId,
         isAuthenticated: true,
         isLoading: false,
       }));
@@ -124,9 +136,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
     // Clear session expired flag (Issue #22)
     sessionExpiredHandled.current = false;
+    selectActiveOrganization(null);
     setState(prev => ({
       ...prev,
       user: null,
+      activeOrganizationId: null,
       isAuthenticated: false,
       isLoading: false,
     }));
@@ -152,10 +166,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
       if (!sessionExpiredHandled.current) {
         sessionExpiredHandled.current = true;
         console.log('Session expired, logging out user');
+        selectActiveOrganization(null);
         // Clear state immediately without calling API (session is already invalid)
         setState(prev => ({
           ...prev,
           user: null,
+          activeOrganizationId: null,
           isAuthenticated: false,
           isLoading: false,
         }));
@@ -180,9 +196,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
         // Only clear state if we're currently authenticated
         if (state.isAuthenticated && !sessionExpiredHandled.current) {
           sessionExpiredHandled.current = true;
+          selectActiveOrganization(null);
           setState(prev => ({
             ...prev,
             user: null,
+            activeOrganizationId: null,
             isAuthenticated: false,
             isLoading: false,
           }));
@@ -196,12 +214,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
     };
   }, [state.isAuthenticated]);
 
+  const switchOrganization = useCallback((organizationId: string) => {
+    if (!state.user?.organizations.some(m => m.organizationId === organizationId)) return;
+    const activeOrganizationId = selectActiveOrganization(state.user, organizationId);
+    setState(prev => ({ ...prev, activeOrganizationId }));
+  }, [state.user]);
+
   const value: AuthContextType = {
     ...state,
     login,
     register,
     logout,
     checkAuth,
+    switchOrganization,
   };
 
   return (

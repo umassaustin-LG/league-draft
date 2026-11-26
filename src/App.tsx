@@ -50,7 +50,7 @@ function App() {
   // All hooks must be called unconditionally at the top
   const viewMode = useViewMode();
   const isPublicView = viewMode === 'public';
-  const { isAuthenticated, isInitialized, user, logout, checkAuth } = useAuth();
+  const { isAuthenticated, isInitialized, user, logout, checkAuth, activeOrganizationId, switchOrganization } = useAuth();
   const [authPage, setAuthPage] = useState<AuthPage>('login');
   const [resetParams, setResetParams] = useState<{ uid: string; token: string } | null>(null);
   const [joinToken, setJoinToken] = useState<string | null>(null);
@@ -110,9 +110,11 @@ function App() {
     deleteDivision,
     clearActiveDivision,
     refreshSummaries,
-  } = useDivisions(user?.id);
+  } = useDivisions(user?.id, activeOrganizationId);
   const canEditDivision = !isPublicView && !!activeDivision && canManageDivision(user, activeDivision);
-  const leagueAdminMembership = getDefaultLeagueAdminMembership(user);
+  const leagueAdminMembership = activeOrganizationId
+    ? user?.organizations.find(m => m.organizationId === activeOrganizationId && m.role === 'admin')
+    : getDefaultLeagueAdminMembership(user);
   const canCreateDivision = !isPublicView && (!!leagueAdminMembership || canUsePersonalWorkspace(user));
 
   const {
@@ -851,6 +853,8 @@ function App() {
   if (mode === 'selector' || mode === 'templates') {
     return (
       <DivisionSelector
+        activeOrganizationId={activeOrganizationId}
+        onSwitchOrganization={switchOrganization}
         divisions={summaries}
         onSelectDivision={handleSelectDivision}
         onCreateNew={canCreateDivision ? () => setMode('creator') : undefined}

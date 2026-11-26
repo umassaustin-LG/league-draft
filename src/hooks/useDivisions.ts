@@ -30,7 +30,7 @@ export function isDivisionPartiallySetup(division: Division | null): boolean {
   );
 }
 
-export function useDivisions(userId?: string) {
+export function useDivisions(userId?: string, organizationId?: string | null) {
   const [, setDivisionIds] = useState<string[]>([]);
   const [summaries, setSummaries] = useState<DivisionSummary[]>([]);
   const [activeDivision, setActiveDivision] = useState<Division | null>(null);
@@ -65,7 +65,7 @@ export function useDivisions(userId?: string) {
         if (!cancelled) setIsLoading(false);
       });
     return () => { cancelled = true; };
-  }, [userId]);
+  }, [userId, organizationId]);
 
   // Check if a division name already exists (case-insensitive)
   // Only check divisions that have players - empty ones will be cleaned up by the backend
