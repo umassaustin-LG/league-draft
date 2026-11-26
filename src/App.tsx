@@ -227,7 +227,7 @@ function App() {
     // Only sync phase changes AFTER the division state has been loaded
     // This prevents the default 'upload' phase from overwriting the API-loaded phase
     // Also prevent concurrent updates (Issue #6)
-    const persistedPhase = getPersistedDraftPhase(phase, draftState.isDraftComplete);
+    const persistedPhase = getPersistedDraftPhase(phase, activeDivision?.phase ?? phase);
     if (canEditDivision && divisionStateLoaded && activeDivision && persistedPhase !== activeDivision.phase && !isUpdatingPhase.current) {
       isUpdatingPhase.current = true;
       // When draft completes, save the completion timestamp and final state
@@ -261,7 +261,7 @@ function App() {
         });
       }
     }
-  }, [phase, draftState.isDraftComplete, activeDivision?.id, canEditDivision, divisionStateLoaded]);
+  }, [phase, activeDivision?.phase, activeDivision?.id, canEditDivision, divisionStateLoaded]);
 
   // Browser history management - handle back/forward navigation
   // Strategy: Push a state entry on load, and when user presses back,

@@ -51,10 +51,24 @@ describe('live last-slot sibling recovery', () => {
     expect(renderBoard(state)).not.toContain('Back to Divisions');
     state.isDraftComplete = true;
     expect(renderBoard(state)).toContain('Back to Divisions');
-    expect(getPersistedDraftPhase('draft', true)).toBe('complete');
-    expect(getPersistedDraftPhase('draft', false)).toBe('draft');
-    expect(getPersistedDraftPhase('review', false)).toBe('review');
+    expect(getPersistedDraftPhase('draft', 'complete')).toBe('complete');
+    expect(getPersistedDraftPhase('draft', 'draft')).toBe('draft');
+    expect(getPersistedDraftPhase('review', 'review')).toBe('review');
     expect(state.picks).toHaveLength(3);
+  });
+
+  it('waits for explicit finalization before persisting the completed phase', () => {
+    const state = finalPickState();
+    state.isDraftComplete = true;
+    expect(getPersistedDraftPhase('draft', 'draft')).toBe('draft');
+    const markup = renderToStaticMarkup(createElement(DraftBoard, {
+      draftState: state, controls: { ...controls, pendingComplete: true },
+      rosterSize: 2, enforceAgeLimit: false, maxPerAge: 0,
+    }));
+    expect(markup).toContain('Finalize draft');
+    expect(markup).toContain('Back to review');
+    expect(getPersistedDraftPhase('complete', 'draft')).toBe('complete');
+    expect(getPersistedDraftPhase('draft', 'complete')).toBe('complete');
   });
 
   it('does not transfer a retained sibling lock after another team drafts the released sibling', () => {
