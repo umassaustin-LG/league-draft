@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Undo,
   ChevronLeft,
@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { DraftState, Team, DivisionAgeRange, Player, PickWarning, DraftPick } from '../types';
 import { getPickWarnings } from '../utils/draftSafety';
+import { canSkipDraftPick, getBestAvailable, getDraftSiblingState } from '../utils/draftLogic';
 import { getNextPick, calculateDraftOrder } from '../utils/draftOrder';
 import { useViewMode } from '../contexts/ViewContext';
 import { VoiceCopilot } from './draft/VoiceCopilot';
@@ -58,7 +59,7 @@ type PendingAction =
   | { kind: 'age-override'; player: Player; currentCount: number };
 
 export const DraftBoard = ({
-  draftState,
+  draftState: savedDraftState,
   controls: draftControls,
   enforceAgeLimit,
   maxPerAge,
@@ -73,6 +74,11 @@ export const DraftBoard = ({
   onClearMandatoryPickError,
   voiceCopilotDivisionId,
 }: DraftBoardProps) => {
+  const siblingState = useMemo(() => getDraftSiblingState(
+    savedDraftState,
+    rosterSize ?? Math.ceil(savedDraftState.players.length / savedDraftState.teams.length),
+  ), [savedDraftState, rosterSize]);
+  const draftState = { ...savedDraftState, players: siblingState.players };
   const viewMode = useViewMode();
   const isPublicView = viewMode === 'public';
   const controls = isPublicView ? undefined : draftControls;
@@ -165,13 +171,16 @@ export const DraftBoard = ({
 
   const nextTeam = draftState.teams.find((t) => t.id === nextTeamId);
 
-  const totalRounds = Math.ceil(draftState.players.length / draftState.teams.length);
+  const totalRounds = rosterSize ?? Math.ceil(draftState.players.length / draftState.teams.length);
   const totalPicks = draftState.teams.length * totalRounds;
   const currentPickNumber = (draftState.currentRound - 1) * draftState.teams.length + draftState.currentPickInRound;
   const isFinalRound = draftState.currentRound === totalRounds;
 
   const remainingSpots = totalPicks - draftState.picks.length;
-  const canSkip = availablePlayers.length < remainingSpots;
+  const canSkip = !!draftState.currentTeamId && canSkipDraftPick(draftState.players, draftState.currentTeamId, remainingSpots, draftState.mandatoryPick?.playerId);
+  const pickCandidates = draftState.mandatoryPick
+    ? draftState.players.filter(player => player.id === draftState.mandatoryPick!.playerId)
+    : draftState.players;
 
   const handleRequestSkip = () => {
     if (!currentTeam || !canSkip) return;
@@ -411,6 +420,12 @@ export const DraftBoard = ({
       )}
 
       <div className="max-w-7xl mx-auto">
+        {siblingState.released.length > 0 && (
+          <div role="status" className="mb-4 border border-rule bg-surface p-4 text-ink">
+            Sibling rule could not be honored for {siblingState.released.map(player => player.name).join(', ')}:
+            {' '}their sibling’s team does not have enough picks left. They may be drafted by another team; coach assignments still apply.
+          </div>
+        )}
         {/* Sticky scoreboard — current pick (hero) | on-deck OR mandatory OR pending | admin */}
         <div className={`sticky ${canRunDraft ? 'top-10' : 'top-0'} z-40 -mx-4 px-4 pt-0 pb-4 bg-surface`}>
           <section className="bg-surface border border-rule rounded-sharp">
@@ -495,7 +510,7 @@ export const DraftBoard = ({
               <div className="flex items-start gap-1">
                 {controls ? (
                   <>
-                    {isFinalRound && (
+                    {(isFinalRound || !getBestAvailable(pickCandidates, derivedCurrentTeamId ?? undefined)) && (
                       <button
                         onClick={handleRequestSkip}
                         disabled={!canSkip || isLoading || !!pendingAction}
