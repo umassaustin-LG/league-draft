@@ -131,6 +131,7 @@ function App() {
     executeTrade,
     finalizeDraft,
     cancelPendingComplete,
+    requestFinalization,
     isLoading,
     mandatoryPickError,
     error: draftError,
@@ -1183,6 +1184,7 @@ function App() {
               pendingComplete,
               onFinalizeDraft: finalizeDraft,
               onCancelComplete: cancelPendingComplete,
+              onRequestComplete: requestFinalization,
             }}
             error={draftError}
             pendingRuleWarnings={pendingRuleWarnings}

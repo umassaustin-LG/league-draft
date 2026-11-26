@@ -71,13 +71,16 @@ describe('draft finalization', () => {
     renderHook().cancelPendingComplete();
     expect(renderHook().phase).toBe('draft');
     expect(renderHook().pendingComplete).toBe(false);
+    renderHook().requestFinalization();
+    expect(renderHook().phase).toBe('draft');
+    expect(renderHook().pendingComplete).toBe(true);
     renderHook().finalizeDraft();
     expect(renderHook().phase).toBe('complete');
     expect(renderHook().pendingComplete).toBe(false);
   });
 
-  it('reviews a finalized board and returns to results without changing the phase or draft data', () => {
-    renderHook().loadDivisionState({ ...division, phase: 'complete', draftState: { ...state, isDraftComplete: true } });
+  it.each([true, false])('reviews a finalized board and returns to results without changing data (all slots filled: %s)', isDraftComplete => {
+    renderHook().loadDivisionState({ ...division, phase: 'complete', draftState: { ...state, isDraftComplete } });
     const before = renderHook().draftState;
     renderHook().returnToDraftBoard();
     expect(renderHook().phase).toBe('complete');
@@ -92,9 +95,19 @@ describe('draft finalization', () => {
   it('does not prompt to finalize an unfinished or empty draft', () => {
     renderHook().loadDivisionState(division);
     expect(renderHook().pendingComplete).toBe(false);
+    renderHook().requestFinalization();
+    expect(renderHook().pendingComplete).toBe(false);
     renderHook().loadDivisionState({ ...division, phase: 'upload', draftState: null, players: [], teams: [] });
     expect(renderHook().pendingComplete).toBe(false);
     expect(renderHook().phase).toBe('upload');
+  });
+
+  it('can reopen finalization when players run out before the slots do', () => {
+    renderHook().loadDivisionState({ ...division, draftState: { ...state, players: players.map(player => ({ ...player, isDrafted: true })) } });
+    renderHook().requestFinalization();
+    expect(renderHook().pendingComplete).toBe(true);
+    expect(renderHook().phase).toBe('draft');
+    expect(renderHook().draftState.isDraftComplete).toBe(false);
   });
 
   it('leaves the phase and completion prompt unchanged if the final pick fails', async () => {

@@ -432,6 +432,13 @@ export const useDraft = (_divisionId?: string) => {
     setPendingComplete(false);
   }, []);
 
+  const requestFinalization = useCallback(() => {
+    if (phase === 'draft' && (draftState.isDraftComplete
+      || draftState.players.length > 0 && draftState.players.every(player => player.isDrafted))) {
+      setPendingComplete(true);
+    }
+  }, [phase, draftState]);
+
   // Clear mandatory pick error
   const clearMandatoryPickError = useCallback(() => {
     setMandatoryPickError(null);
@@ -465,6 +472,7 @@ export const useDraft = (_divisionId?: string) => {
     executeTrade,
     finalizeDraft,
     cancelPendingComplete,
+    requestFinalization,
     isLoading,
     error,
     mandatoryPickError,

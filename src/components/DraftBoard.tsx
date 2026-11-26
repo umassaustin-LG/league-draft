@@ -28,6 +28,7 @@ interface DraftControls {
   pendingComplete: boolean;
   onFinalizeDraft: () => void;
   onCancelComplete: () => void;
+  onRequestComplete?: () => void;
 }
 
 interface DraftBoardProps {
@@ -425,14 +426,20 @@ export const DraftBoard = ({
       )}
 
       <div className="max-w-7xl mx-auto">
-        {draftState.isDraftComplete && onBackToDivisions && (
+        {(draftState.isDraftComplete || onViewResults) && onBackToDivisions && (
           <button onClick={onBackToDivisions} className="mb-4 rounded-button border border-rule px-4 py-2 text-ink hover:border-rule-strong">
             Back to Divisions
           </button>
         )}
-        {draftState.isDraftComplete && onViewResults && (
+        {onViewResults && (
           <button onClick={onViewResults} className="mb-4 ml-2 rounded-button border border-rule px-4 py-2 text-ink hover:border-rule-strong">
             View Results
+          </button>
+        )}
+        {!onViewResults && controls?.onRequestComplete && !controls.pendingComplete
+          && (draftState.isDraftComplete || draftState.players.length > 0 && availablePlayers.length === 0) && (
+          <button onClick={controls.onRequestComplete} className="mb-4 ml-2 rounded-button border border-rule px-4 py-2 text-ink hover:border-rule-strong">
+            Finalize draft
           </button>
         )}
         {siblingState.released.length > 0 && (

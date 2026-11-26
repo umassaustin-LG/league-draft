@@ -69,6 +69,32 @@ describe('live last-slot sibling recovery', () => {
     expect(markup).toContain('Back to review');
   });
 
+  it.each([true, false])('shows View Results for a finalized draft regardless of unfilled slots (all slots filled: %s)', isDraftComplete => {
+    const state = finalPickState();
+    state.isDraftComplete = isDraftComplete;
+    const markup = renderToStaticMarkup(createElement(DraftBoard, {
+      draftState: state, controls: { ...controls, onRequestComplete: vi.fn() }, onViewResults: vi.fn(),
+      onBackToDivisions: vi.fn(), rosterSize: 2, enforceAgeLimit: false, maxPerAge: 0,
+    }));
+    expect(markup).toContain('View Results');
+    expect(markup).toContain('Back to Divisions');
+    expect(markup).not.toContain('Finalize draft');
+  });
+
+  it('keeps Finalize accessible after dismissing the completion confirmation', () => {
+    const state = finalPickState();
+    const render = () => renderToStaticMarkup(createElement(DraftBoard, {
+      draftState: state, controls: { ...controls, onRequestComplete: vi.fn() },
+      rosterSize: 2, enforceAgeLimit: false, maxPerAge: 0,
+    }));
+    expect(render()).not.toContain('Finalize draft');
+    state.isDraftComplete = true;
+    expect(render()).toContain('Finalize draft');
+    state.isDraftComplete = false;
+    state.players = state.players.map(player => ({ ...player, isDrafted: true }));
+    expect(render()).toContain('Finalize draft');
+  });
+
   it('does not transfer a retained sibling lock after another team drafts the released sibling', () => {
     const players = [
       player('root', { siblingId: 'kept', isDrafted: true, draftedByTeamId: 'a' }),
