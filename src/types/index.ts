@@ -409,7 +409,21 @@ export interface DivisionAgeRange {
   max: number;
 }
 
+export interface TeamBuilderSettings {
+  config: {
+    minRosterSize: number;
+    maxRosterSize: number;
+    forceEvenTeams: boolean;
+    balanceTolerance?: number;
+    topTalentRounds?: number;
+    prioritizeBalance?: boolean;
+  };
+  algorithmMode: 'balance-first' | 'requests-first';
+  resolvedRequests: ResolvedRequest[];
+}
+
 export interface Division {
+  teamBuilderSettings?: TeamBuilderSettings | null;
   id: string;
   name: string;
   preset: DivisionPreset;

@@ -419,6 +419,43 @@ def validate_division_update_data(data: Dict[str, Any]) -> Tuple[Optional[Dict],
     if "scoring_weights" in data:
         cleaned["scoring_weights"] = data["scoring_weights"]
 
+    if "team_builder_settings" in data:
+        settings = data["team_builder_settings"]
+        valid = settings is None
+        if isinstance(settings, dict):
+            config = settings.get("config", {})
+            requests = settings.get("resolvedRequests", [])
+            valid = (
+                settings.get("algorithmMode") in ("balance-first", "requests-first")
+                and isinstance(config, dict)
+                and type(config.get("minRosterSize")) is int
+                and type(config.get("maxRosterSize")) is int
+                and 0 <= config["minRosterSize"] <= config["maxRosterSize"] <= 1000
+                and config["maxRosterSize"] > 0
+                and type(config.get("forceEvenTeams")) is bool
+                and isinstance(requests, list)
+                and all(
+                    isinstance(r, dict)
+                    and all(isinstance(r.get(key), str) for key in ("id", "playerId", "rawRequestString"))
+                    and r.get("requestType") in ("coach", "teammate")
+                    and r.get("status") in ("auto-confirmed", "needs-review", "user-confirmed", "unresolvable")
+                    and all(r.get(key) is None or isinstance(r[key], str) for key in ("resolvedTargetId", "resolvedTargetName"))
+                    and isinstance(r.get("confidenceScore"), (int, float))
+                    and type(r.get("isTwoWay")) is bool
+                    for r in requests
+                )
+            )
+            config = config if isinstance(config, dict) else {}
+            for key in ("balanceTolerance", "topTalentRounds"):
+                if key in config and (type(config[key]) not in (int, float) or config[key] < 0):
+                    valid = False
+            if "prioritizeBalance" in config and type(config["prioritizeBalance"]) is not bool:
+                valid = False
+        if valid:
+            cleaned["team_builder_settings"] = settings
+        else:
+            errors["team_builder_settings"] = ["Invalid Team Builder settings"]
+
     if "scoring_mode" in data:
         scoring_mode = data["scoring_mode"]
         valid_modes = ["raw", "pre-weighted"]

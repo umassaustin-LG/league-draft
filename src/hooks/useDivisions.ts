@@ -174,6 +174,7 @@ export function useDivisions(userId?: string) {
       if (updates.teamCount !== undefined) apiUpdates.teamCount = updates.teamCount;
       if (updates.rosterSize !== undefined) apiUpdates.rosterSize = updates.rosterSize;
       if (updates.scoringWeights !== undefined) apiUpdates.scoringWeights = updates.scoringWeights;
+      if (updates.teamBuilderSettings !== undefined) apiUpdates.teamBuilderSettings = updates.teamBuilderSettings;
       if (updates.scoringMode !== undefined) apiUpdates.scoringMode = updates.scoringMode;
       if (updates.phase !== undefined) apiUpdates.phase = updates.phase;
 

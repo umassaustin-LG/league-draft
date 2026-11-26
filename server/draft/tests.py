@@ -935,6 +935,40 @@ class CrossTenantTestBase(TestCase):
         ]
 
 
+class TeamBuilderSettingsTests(CrossTenantTestBase):
+    def test_settings_round_trip_and_clear(self):
+        self.client.force_login(self.victim_admin)
+        url = f"/api/divisions/{self.victim_division.id}/"
+        self.assertIsNone(self.client.get(url + "?include=all").json()["team_builder_settings"])
+        settings = {
+            "config": {"minRosterSize": 2, "maxRosterSize": 14, "forceEvenTeams": True},
+            "algorithmMode": "balance-first",
+            "resolvedRequests": [{
+                "id": "req-1", "playerId": str(self.victim_players[0].id), "requestType": "teammate",
+                "rawRequestString": "Kid V1", "resolvedTargetId": str(self.victim_players[1].id),
+                "resolvedTargetName": "Kid V1", "status": "user-confirmed", "confidenceScore": 0.5,
+                "isTwoWay": False,
+            }],
+        }
+        response = self.client.patch(url, json.dumps({"team_builder_settings": settings}), content_type="application/json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.client.get(url + "?include=all").json()["team_builder_settings"], settings)
+        response = self.client.patch(url, json.dumps({"team_builder_settings": None}), content_type="application/json")
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.json()["team_builder_settings"])
+
+    def test_invalid_settings_and_unauthorized_updates_are_rejected(self):
+        self.client.force_login(self.victim_admin)
+        url = f"/api/divisions/{self.victim_division.id}/"
+        for settings in [[], {"config": 3}, {"algorithmMode": "unknown"}, {
+            "algorithmMode": "requests-first", "config": {"minRosterSize": 14, "maxRosterSize": 2, "forceEvenTeams": True},
+        }]:
+            response = self.client.patch(url, json.dumps({"team_builder_settings": settings}), content_type="application/json")
+            self.assertEqual(response.status_code, 400)
+        self.client.force_login(self.viewer)
+        self.assertEqual(self.client.patch(url, '{"team_builder_settings": null}', content_type="application/json").status_code, 403)
+
+
 class TeamBuilderAccessTests(CrossTenantTestBase):
     def _post(self, user, action, body):
         self.client.force_login(user)

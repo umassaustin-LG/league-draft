@@ -27,6 +27,18 @@ const division: Division = {
 };
 
 describe('Team Builder re-entry', () => {
+  it('initializes configuration from saved settings rather than roster defaults', () => {
+    const html = renderToStaticMarkup(createElement(TeamBuilderFlow, {
+      division: { ...division, players: [{ ...player, draftedByTeamId: undefined }], teamBuilderSettings: {
+        config: { minRosterSize: 2, maxRosterSize: 14, forceEvenTeams: true },
+        algorithmMode: 'balance-first', resolvedRequests: [],
+      } }, onBack() {},
+    }));
+    expect(html).toMatch(/Minimum Roster Size[\s\S]*?>2<\/div>/);
+    expect(html).toMatch(/Maximum Roster Size[\s\S]*?>14<\/div>/);
+    expect(html).toContain('All teams will have the same number of players');
+  });
+
   it('renders saved team rosters without an in-memory algorithm result', () => {
     const html = renderToStaticMarkup(createElement(TeamBuilderFlow, { division, onBack() {} }));
     expect(html).toContain('Saved team rosters');
