@@ -1230,6 +1230,33 @@ export function runRequestsFirstAlgorithm(
 
   fillMinimumRosters(players, workingTeams, assignments, fullConfig, warnings, resolvedRequests);
 
+  return summarizeTeamBuilderAssignments(players, workingTeams, assignments, resolvedRequests, fullConfig, warnings, clusters);
+}
+
+export function summarizeTeamBuilderAssignments(
+  players: TeamBuilderPlayer[],
+  teams: Team[],
+  assignments: AssignmentResult[],
+  resolvedRequests: ResolvedRequest[],
+  config: Partial<RequestsFirstConfig> = {},
+  warnings: string[] = [],
+  clusters: RequestCluster[] = []
+): RequestsFirstResult {
+  const fullConfig = { ...DEFAULT_REQUESTS_FIRST_CONFIG, ...config };
+  const playerMap = new Map(players.map(player => [player.id, player]));
+  const workingTeams: TeamBuilderTeam[] = teams.map(team => {
+    const assignedPlayerIds = assignments.filter(a => a.teamId === team.id).map(a => a.playerId);
+    return {
+      ...team, assignedPlayerIds,
+      currentScore: assignedPlayerIds.reduce((sum, id) => sum + (playerMap.get(id)?.totalScore || 0), 0),
+    };
+  });
+  const playerRequests = new Map<string, ResolvedRequest[]>();
+  for (const request of resolvedRequests) {
+    const requests = playerRequests.get(request.playerId) || [];
+    requests.push(request);
+    playerRequests.set(request.playerId, requests);
+  }
   const suggestedTrades = findBalancingTrades(
     workingTeams,
     players,
@@ -1356,15 +1383,15 @@ export function runRequestsFirstAlgorithm(
 
   const balanceBasedCount = assignments.filter(a => a.reason === 'balance').length;
 
-  const twoWayTotal = players.reduce((sum, p) => sum + (p.twoWayTeammateIds?.length || 0), 0);
+  const twoWayTotal = playerHappiness.reduce((sum, h) => sum + h.twoWayRequestsTotal, 0);
   const twoWayHonored = playerHappiness.reduce((sum, h) => sum + h.twoWayRequestsHonored, 0);
 
-  const oneWayTotal = players.reduce((sum, p) => sum + (p.oneWayTeammateIds?.length || 0), 0);
+  const oneWayTotal = playerHappiness.reduce((sum, h) => sum + h.teammateRequestsTotal - h.twoWayRequestsTotal, 0);
   const oneWayHonored = playerHappiness.reduce((sum, h) =>
     sum + (h.teammateRequestsHonored - h.twoWayRequestsHonored), 0
   );
 
-  const coachRequestTotal = players.filter(p => p.resolvedCoachTeamId).length;
+  const coachRequestTotal = playerHappiness.filter(h => h.coachRequestHonored !== null).length;
   const coachRequestHonored = playerHappiness.filter(h => h.coachRequestHonored === true).length;
 
   // Average happiness
@@ -1436,6 +1463,13 @@ export function findBalancingTrades(
     }
     playerRequests.get(req.playerId)!.push(req);
   }
+
+  const satisfiedRequests = resolvedRequests.filter(req => {
+    if ((req.status !== 'auto-confirmed' && req.status !== 'user-confirmed') || !req.resolvedTargetId) return false;
+    const teamId = playerTeamMap.get(req.playerId);
+    const targetTeamId = req.requestType === 'coach' ? req.resolvedTargetId : playerTeamMap.get(req.resolvedTargetId);
+    return !!teamId && teamId === targetTeamId;
+  });
 
   // Determine which players are tradeable
   const isPlayerTradeable = (playerId: string): boolean => {
@@ -1524,6 +1558,11 @@ export function findBalancingTrades(
         for (const lowPlayer of lowTradeable) {
           // Only consider if high player has more points
           if (highPlayer.score <= lowPlayer.score) continue;
+
+          const teamAfterTrade = (playerId: string) => playerId === highPlayer.playerId
+            ? lowTeam.id : playerId === lowPlayer.playerId ? highTeam.id : playerTeamMap.get(playerId);
+          if (satisfiedRequests.some(req => teamAfterTrade(req.playerId) !== (req.requestType === 'coach'
+            ? req.resolvedTargetId : teamAfterTrade(req.resolvedTargetId!)))) continue;
 
           // Calculate new averages after trade
           const newHighTotal = highTeam.currentScore - highPlayer.score + lowPlayer.score;
