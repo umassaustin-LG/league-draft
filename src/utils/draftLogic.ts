@@ -9,9 +9,12 @@ export function clearForeignCoachMandatoryPick(state: DraftState): DraftState {
 
 export function releaseExhaustedSiblingLocks(players: Player[], remainingPicks: Record<string, number>, includeCoachKids = true): void {
   const locks = new Map<string, Player[]>();
+  const coachKids = new Map<string, number>();
   for (const player of players) {
-    if (includeCoachKids && !player.isDrafted && player.isCoachKid && player.coachTeamId && player.lockedToTeamId !== player.coachTeamId) {
-      player.lockedToTeamId = undefined;
+    if (includeCoachKids && !player.isDrafted && player.isCoachKid && player.coachTeamId) {
+      coachKids.set(player.coachTeamId, (coachKids.get(player.coachTeamId) ?? 0) + 1);
+      if (player.lockedToTeamId !== player.coachTeamId) player.lockedToTeamId = undefined;
+      continue;
     }
     if (!player.isDrafted && player.lockedToTeamId) {
       const group = locks.get(player.lockedToTeamId) ?? [];
@@ -22,7 +25,7 @@ export function releaseExhaustedSiblingLocks(players: Player[], remainingPicks: 
   for (const [teamId, group] of locks) {
     if (remainingPicks[teamId] === undefined) continue;
     group.sort((a, b) => a.rank - b.rank || a.id.localeCompare(b.id));
-    for (const player of group.slice(Math.max(0, remainingPicks[teamId]))) player.lockedToTeamId = undefined;
+    for (const player of group.slice(Math.max(0, remainingPicks[teamId] - (coachKids.get(teamId) ?? 0)))) player.lockedToTeamId = undefined;
   }
 }
 

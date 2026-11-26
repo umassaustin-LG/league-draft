@@ -70,6 +70,7 @@ export function runSimulation(
   const teamPicksMade: Record<string, number> = {};
   simTeams.forEach(t => { teamPicksMade[t.id] = 0; });
   const remainingPicks = Object.fromEntries(simTeams.map(team => [team.id, totalRounds]));
+  if (options.includeSiblings) releaseExhaustedSiblingLocks(simPlayers, remainingPicks, options.includeCoachKids);
   const siblingGroups = getSiblingGroups(simPlayers);
   const rankedPlayers = [...simPlayers].sort((a, b) => b.totalScore - a.totalScore);
 

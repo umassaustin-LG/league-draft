@@ -30,6 +30,20 @@ const family = () => [
 const config = { enforceAgeLimit: false, maxPerAge: 0, ageRange: { min: 7, max: 10 }, rosterSize: 2, teamCount: 5, teams };
 
 describe('coach assignment takes precedence over sibling locks', () => {
+  it('reserves the last seat for an own coach kid without counting its own lock twice', () => {
+    const players = [player('child', { isCoachKid: true, coachTeamId: 't1', lockedToTeamId: 't1' }),
+      player('sibling', { lockedToTeamId: 't1' })];
+    const twoSeats = structuredClone(players);
+    const disabled = structuredClone(players);
+    releaseExhaustedSiblingLocks(players, { t1: 1 });
+    expect(players[0].lockedToTeamId).toBe('t1');
+    expect(players[1].lockedToTeamId).toBeUndefined();
+    releaseExhaustedSiblingLocks(twoSeats, { t1: 2 });
+    expect(twoSeats[1].lockedToTeamId).toBe('t1');
+    disabled[0].lockedToTeamId = undefined;
+    releaseExhaustedSiblingLocks(disabled, { t1: 1 }, false);
+    expect(disabled[1].lockedToTeamId).toBe('t1');
+  });
   it('removes foreign coach locks before trimming legitimate sibling capacity', () => {
     const players = [player('foreign', { isCoachKid: true, coachTeamId: 't5', lockedToTeamId: 't1', rank: 1 }),
       player('sibling', { lockedToTeamId: 't1', rank: 2 })];

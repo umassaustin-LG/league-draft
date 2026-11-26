@@ -519,6 +519,7 @@ class DraftService:
 
         division.players.filter(is_drafted=False, is_coach_kid=True, coach_team__isnull=False,
                                 locked_to_team__isnull=False).exclude(locked_to_team_id=F("coach_team_id")).update(locked_to_team=None)
+        cls._release_exhausted_sibling_locks(draft_state)
 
         # Get all undrafted mandatory players for this team (coach's kids + locked siblings)
         coach_kids = list(Player.objects.filter(
@@ -618,11 +619,16 @@ class DraftService:
         draft_state.division.players.filter(is_drafted=False, is_coach_kid=True, coach_team__isnull=False,
                                            locked_to_team__isnull=False).exclude(locked_to_team_id=F("coach_team_id")).update(locked_to_team=None)
         picks = {row["team_id"]: row["count"] for row in draft_state.picks.values("team_id").annotate(count=Count("id"))}
+        coach_kids = {row["coach_team_id"]: row["count"] for row in draft_state.division.players.filter(
+            is_drafted=False, is_coach_kid=True, coach_team__isnull=False
+        ).values("coach_team_id").annotate(count=Count("id"))}
         by_team = {}
-        for player in draft_state.division.players.filter(is_drafted=False, locked_to_team__isnull=False).order_by("rank", "id"):
+        for player in draft_state.division.players.filter(is_drafted=False, locked_to_team__isnull=False).exclude(
+            is_coach_kid=True, coach_team__isnull=False
+        ).order_by("rank", "id"):
             by_team.setdefault(player.locked_to_team_id, []).append(player.id)
         for team_id, player_ids in by_team.items():
-            remaining = max(0, draft_state.division.roster_size - picks.get(team_id, 0))
+            remaining = max(0, draft_state.division.roster_size - picks.get(team_id, 0) - coach_kids.get(team_id, 0))
             draft_state.division.players.filter(id__in=player_ids[remaining:]).update(locked_to_team=None)
 
     @classmethod

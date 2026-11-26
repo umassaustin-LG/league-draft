@@ -152,6 +152,24 @@ class CoachSiblingTests(TestCase):
         self.assertIsNone(self.delta.locked_to_team_id)
         self.assertEqual(self.delta.coach_team_id, self.teams[4].id)
 
+    def test_last_spot_is_reserved_for_own_coach_kid_before_sibling(self):
+        for index in range(5):
+            self.state = DraftService.draft_player(self.state.id, self.singles[index].id, self.teams[index].id)
+        sibling = self.singles[5]
+        sibling.locked_to_team = self.teams[0]
+        sibling.projected_round = 2
+        sibling.save()
+        child = self.singles[6]
+        child.is_coach_kid = True
+        child.coach_team = self.teams[0]
+        child.projected_round = 3
+        child.save()
+        self.set_stale_mandatory()
+        state = DraftService.draft_player(self.state.id, child.id, self.teams[0].id)
+        self.assertEqual(state.picks.last().player_id, child.id)
+        sibling.refresh_from_db()
+        self.assertIsNone(sibling.locked_to_team_id)
+
     def test_repair_recomputes_valid_mandatory_and_does_not_bypass_it(self):
         self.set_stale_mandatory()
         own_child = self.singles[0]
