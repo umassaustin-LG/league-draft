@@ -92,8 +92,8 @@ class DraftService:
 
         # Check for mandatory pick
         previously_locked = cls._sibling_locks(draft_state)
-        cls._release_exhausted_sibling_locks(draft_state)
         cls._repair_foreign_coach_mandatory_pick(draft_state)
+        cls._release_exhausted_sibling_locks(draft_state)
         if (
             draft_state.mandatory_player_id
             and str(draft_state.mandatory_player_id) != str(player_id)
@@ -183,8 +183,8 @@ class DraftService:
         # Cannot skip if remaining players >= remaining draft spots
         # (all players must be drafted)
         previously_locked = cls._sibling_locks(draft_state)
-        cls._release_exhausted_sibling_locks(draft_state)
         cls._repair_foreign_coach_mandatory_pick(draft_state)
+        cls._release_exhausted_sibling_locks(draft_state)
         available = list(division.players.filter(is_drafted=False))
         has_eligible_player = any(
             (not draft_state.mandatory_player_id or p.id == draft_state.mandatory_player_id)
@@ -613,8 +613,10 @@ class DraftService:
 
     @classmethod
     def _release_exhausted_sibling_locks(cls, draft_state: DraftState) -> None:
-        from django.db.models import Count
+        from django.db.models import Count, F
 
+        draft_state.division.players.filter(is_drafted=False, is_coach_kid=True, coach_team__isnull=False,
+                                           locked_to_team__isnull=False).exclude(locked_to_team_id=F("coach_team_id")).update(locked_to_team=None)
         picks = {row["team_id"]: row["count"] for row in draft_state.picks.values("team_id").annotate(count=Count("id"))}
         by_team = {}
         for player in draft_state.division.players.filter(is_drafted=False, locked_to_team__isnull=False).order_by("rank", "id"):

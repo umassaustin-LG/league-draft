@@ -146,7 +146,7 @@ export function runSimulation(
         // Lock siblings to this team (same as real draft)
         if (options.includeSiblings) {
           lockSiblingToTeam(simPlayers, playerToDraft, team.id, options.includeCoachKids);
-          releaseExhaustedSiblingLocks(simPlayers, remainingPicks);
+          releaseExhaustedSiblingLocks(simPlayers, remainingPicks, options.includeCoachKids);
         }
       }
     }

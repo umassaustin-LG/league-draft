@@ -133,6 +133,25 @@ class CoachSiblingTests(TestCase):
         state = DraftService.skip_pick(self.state.id, self.teams[0].id)
         self.assertTrue(state.picks.first().was_skipped)
 
+    def test_resume_repairs_foreign_coach_lock_before_trimming_last_spot(self):
+        for index in range(5):
+            self.state = DraftService.draft_player(self.state.id, self.singles[index].id, self.teams[index].id)
+        sibling = self.singles[5]
+        sibling.locked_to_team = self.teams[0]
+        sibling.projected_round = 2
+        sibling.rank = 2
+        sibling.save()
+        self.delta.rank = 1
+        self.delta.save()
+        self.set_stale_mandatory()
+        with self.assertRaisesMessage(ValueError, "mandatory player"):
+            DraftService.draft_player(self.state.id, self.singles[6].id, self.teams[0].id)
+        state = DraftService.draft_player(self.state.id, sibling.id, self.teams[0].id)
+        self.assertEqual(state.picks.last().player_id, sibling.id)
+        self.delta.refresh_from_db()
+        self.assertIsNone(self.delta.locked_to_team_id)
+        self.assertEqual(self.delta.coach_team_id, self.teams[4].id)
+
     def test_repair_recomputes_valid_mandatory_and_does_not_bypass_it(self):
         self.set_stale_mandatory()
         own_child = self.singles[0]

@@ -7,9 +7,12 @@ export function clearForeignCoachMandatoryPick(state: DraftState): DraftState {
     : state;
 }
 
-export function releaseExhaustedSiblingLocks(players: Player[], remainingPicks: Record<string, number>): void {
+export function releaseExhaustedSiblingLocks(players: Player[], remainingPicks: Record<string, number>, includeCoachKids = true): void {
   const locks = new Map<string, Player[]>();
   for (const player of players) {
+    if (includeCoachKids && !player.isDrafted && player.isCoachKid && player.coachTeamId && player.lockedToTeamId !== player.coachTeamId) {
+      player.lockedToTeamId = undefined;
+    }
     if (!player.isDrafted && player.lockedToTeamId) {
       const group = locks.get(player.lockedToTeamId) ?? [];
       group.push(player);

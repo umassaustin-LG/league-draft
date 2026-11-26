@@ -5,7 +5,7 @@ import { DraftBoardRosterView } from '../components/draft/DraftBoardRosterView';
 import { DraftBoardPlayerGrid } from '../components/draft/DraftBoardPlayerGrid';
 import { DraftBoard } from '../components/DraftBoard';
 import { DraftState, Player, Team } from '../types';
-import { clearForeignCoachMandatoryPick, getBestAvailable, getMandatoryPick, lockSiblingToTeam } from './draftLogic';
+import { clearForeignCoachMandatoryPick, getBestAvailable, getMandatoryPick, lockSiblingToTeam, releaseExhaustedSiblingLocks } from './draftLogic';
 import { getPickWarnings } from './draftSafety';
 import { runSimulation } from './simulation';
 
@@ -30,6 +30,17 @@ const family = () => [
 const config = { enforceAgeLimit: false, maxPerAge: 0, ageRange: { min: 7, max: 10 }, rosterSize: 2, teamCount: 5, teams };
 
 describe('coach assignment takes precedence over sibling locks', () => {
+  it('removes foreign coach locks before trimming legitimate sibling capacity', () => {
+    const players = [player('foreign', { isCoachKid: true, coachTeamId: 't5', lockedToTeamId: 't1', rank: 1 }),
+      player('sibling', { lockedToTeamId: 't1', rank: 2 })];
+    const disabled = structuredClone(players);
+    releaseExhaustedSiblingLocks(players, { t1: 1, t5: 2 });
+    expect(players[0].lockedToTeamId).toBeUndefined();
+    expect(players[1].lockedToTeamId).toBe('t1');
+    releaseExhaustedSiblingLocks(disabled, { t1: 1, t5: 2 }, false);
+    expect(disabled[0].lockedToTeamId).toBe('t1');
+    expect(disabled[1].lockedToTeamId).toBeUndefined();
+  });
   it('clears a resumed foreign coach mandatory pick in hook state and on the board', () => {
     const state: DraftState = {
       players: family(), teams, draftFormat: 'straight', draftOrder: teams.map(t => t.id),
