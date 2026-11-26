@@ -1,10 +1,11 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Player, Team, ResolvedRequest } from '../types';
 import { TeamBuilderResults } from '../components/teamBuilder/TeamBuilderResults';
 import { AssignmentResult, summarizeTeamBuilderAssignments } from './teamBuilderAlgorithm';
 import { isSuggestedTradeCurrent } from './teamBuilderTrades';
+import { confirmTeamBuilderFinalization } from './teamBuilderCompletion';
 
 const players = [90, 71.2, 65, 46.2].map((totalScore, i) => ({
   id: `p${i}`, name: `Player ${i}`, firstName: 'Player', lastName: String(i), totalScore,
@@ -18,6 +19,25 @@ const requests: ResolvedRequest[] = [{
 }];
 
 describe('results after roster edits', () => {
+  it('shows no requests rather than a perfect happiness score for incomplete rosters', () => {
+    const result = summarizeTeamBuilderAssignments(players, teams, assignments.slice(0, 1), []);
+    const html = renderToStaticMarkup(createElement(TeamBuilderResults, { result, players }));
+    expect(html).toContain('No requests');
+    expect(html).not.toContain('100%');
+  });
+
+  it('requires explicit confirmation for unassigned players, but not complete or empty rosters', () => {
+    const confirm = vi.fn().mockReturnValue(false);
+    expect(confirmTeamBuilderFinalization(players, confirm)).toBe(false);
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('4 of 4 players are unassigned: Player 0'));
+    confirm.mockReturnValue(true);
+    expect(confirmTeamBuilderFinalization(players, confirm)).toBe(true);
+    confirm.mockClear();
+    expect(confirmTeamBuilderFinalization(players.map(p => ({ ...p, draftedByTeamId: 't0' })), confirm)).toBe(true);
+    expect(confirmTeamBuilderFinalization([], confirm)).toBe(true);
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
   it('renders swapped placements, totals, averages, and recomputed happiness', () => {
     const before = summarizeTeamBuilderAssignments(players, teams, assignments, requests);
     expect(before.teamSummaries.map(t => t.averageScore)).toEqual([80.6, 55.6]);
