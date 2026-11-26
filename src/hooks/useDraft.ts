@@ -370,6 +370,7 @@ export const useDraft = (_divisionId?: string) => {
       });
       setDraftState(result.draftState);
       setError(null);
+      if (result.draftState.isDraftComplete) setPendingComplete(true);
     } catch (err) {
       console.error('Failed to skip pick:', err);
       setError(getErrorMessage(err, 'Failed to skip pick. Please try again.'));

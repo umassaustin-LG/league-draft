@@ -7,6 +7,22 @@ export function clearForeignCoachMandatoryPick(state: DraftState): DraftState {
     : state;
 }
 
+export function releaseExhaustedSiblingLocks(players: Player[], remainingPicks: Record<string, number>): void {
+  const locks = new Map<string, Player[]>();
+  for (const player of players) {
+    if (!player.isDrafted && player.lockedToTeamId) {
+      const group = locks.get(player.lockedToTeamId) ?? [];
+      group.push(player);
+      locks.set(player.lockedToTeamId, group);
+    }
+  }
+  for (const [teamId, group] of locks) {
+    if (remainingPicks[teamId] === undefined) continue;
+    group.sort((a, b) => a.rank - b.rank || a.id.localeCompare(b.id));
+    for (const player of group.slice(Math.max(0, remainingPicks[teamId]))) player.lockedToTeamId = undefined;
+  }
+}
+
 export function getSiblingGroups(players: Player[]): Map<string, Player[]> {
   const byId = new Map(players.map(player => [player.id, player]));
   const neighbors = new Map(players.map(player => [player.id, new Set<string>()]));
@@ -35,6 +51,42 @@ export function getSiblingGroups(players: Player[]): Map<string, Player[]> {
     for (const member of group) groups.set(member.id, group);
   }
   return groups;
+}
+
+export function getDraftSiblingState(state: DraftState, rosterSize: number) {
+  const remainingPicks = Object.fromEntries(state.teams.map(team => [team.id, rosterSize]));
+  for (const pick of state.picks) remainingPicks[pick.teamId]--;
+  const players = state.players.map(player => ({ ...player }));
+  releaseExhaustedSiblingLocks(players, remainingPicks);
+  const groups = getSiblingGroups(players);
+  const commitments = new Map<string, Set<string>>();
+  for (const group of new Set(groups.values())) {
+    const teamIds = new Set(group.filter(player => player.isDrafted && player.draftedByTeamId).map(player => player.draftedByTeamId!));
+    for (const teamId of teamIds) {
+      const ids = commitments.get(teamId) ?? new Set<string>();
+      group.filter(player => !player.isDrafted).forEach(player => ids.add(player.id));
+      commitments.set(teamId, ids);
+    }
+  }
+  for (const player of players) {
+    if (!player.isDrafted && player.lockedToTeamId) {
+      const ids = commitments.get(player.lockedToTeamId) ?? new Set<string>();
+      ids.add(player.id);
+      commitments.set(player.lockedToTeamId, ids);
+    }
+  }
+  const released = players.filter(player => !player.isDrafted && !player.lockedToTeamId && (
+    !!state.players.find(saved => saved.id === player.id)?.lockedToTeamId
+    || groups.get(player.id)!.some(sibling => sibling.isDrafted && sibling.draftedByTeamId
+      && (commitments.get(sibling.draftedByTeamId)?.size ?? 0) > remainingPicks[sibling.draftedByTeamId])
+  ));
+  return { players, released };
+}
+
+export function canSkipDraftPick(players: Player[], teamId: string, remainingSpots: number, mandatoryPlayerId?: string): boolean {
+  const candidates = mandatoryPlayerId ? players.filter(player => player.id === mandatoryPlayerId) : players;
+  return !getBestAvailable(candidates, teamId)
+    || (!mandatoryPlayerId && players.filter(player => !player.isDrafted).length < remainingSpots);
 }
 
 export interface MandatoryPickResult {

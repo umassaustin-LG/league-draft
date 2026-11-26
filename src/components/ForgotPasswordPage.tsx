@@ -44,7 +44,7 @@ export function ForgotPasswordPage({ onBackToLogin }: ForgotPasswordPageProps) {
               you'll receive a password reset link shortly.
             </p>
             <p className="text-gray-500 text-sm mb-6">
-              Check the Docker logs to see the email content in development mode.
+              Check your spam or junk folder if you don't see the email. If it still hasn't arrived, try again or contact your league administrator.
             </p>
             <button
               onClick={onBackToLogin}
