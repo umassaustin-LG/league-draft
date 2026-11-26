@@ -39,7 +39,7 @@ import {
   AppPhase,
 } from './types';
 import { parseCSVWithMapping, CoachAssignment } from './utils/csvParser';
-import { canManageDivision, canUsePersonalWorkspace, getDefaultLeagueAdminMembership } from './utils/divisionAccess';
+import { canManageDivision, canUsePersonalWorkspace } from './utils/divisionAccess';
 import { getMappingRecoveryPhase } from './utils/importPhase';
 import { savePlayersToApi, saveTeamsToApi } from './api';
 
@@ -114,8 +114,13 @@ function App() {
   const canEditDivision = !isPublicView && !!activeDivision && canManageDivision(user, activeDivision);
   const leagueAdminMembership = activeOrganizationId
     ? user?.organizations.find(m => m.organizationId === activeOrganizationId && m.role === 'admin')
-    : getDefaultLeagueAdminMembership(user);
-  const canCreateDivision = !isPublicView && (!!leagueAdminMembership || canUsePersonalWorkspace(user));
+    : undefined;
+  const canCreateDivision = !isPublicView && (activeOrganizationId ? !!leagueAdminMembership : canUsePersonalWorkspace(user));
+
+  useEffect(() => {
+    clearActiveDivision();
+    setMode('selector');
+  }, [activeOrganizationId, clearActiveDivision]);
 
   const {
     phase,

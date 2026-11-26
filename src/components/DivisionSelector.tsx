@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Plus, Play, Eye, Trash2, Calendar, Users, AlertCircle, LogOut, User, Settings, ClipboardList } from 'lucide-react';
 import { DivisionSummary, AppPhase, User as UserType } from '../types';
-import { canManageDivision, getDivisionView } from '../utils/divisionAccess';
+import { canManageDivision, canSelectPersonalWorkspace, getDivisionView } from '../utils/divisionAccess';
 
 interface DivisionSelectorProps {
   divisions: DivisionSummary[];
@@ -91,12 +91,13 @@ export const DivisionSelector = ({
         {/* User Header */}
         {user && onLogout && (
           <div className="flex items-center justify-end gap-4 mb-4 px-1">
-            {user.organizations.length > 1 && onSwitchOrganization && (
+            {(user.organizations.length > 1 || user.role === 'master_admin' && user.organizations.length > 0) && onSwitchOrganization && (
               <label className="text-sm text-gray-600 dark:text-gray-400">
                 League
                 <select aria-label="Active league" value={activeOrganizationId ?? ''}
                   onChange={event => onSwitchOrganization(event.target.value)}
                   className="ml-2 rounded border p-2 dark:bg-gray-800">
+                  {canSelectPersonalWorkspace(user) && <option value="">Personal</option>}
                   {user.organizations.map(membership => (
                     <option key={membership.organizationId} value={membership.organizationId}>
                       {membership.organizationName}

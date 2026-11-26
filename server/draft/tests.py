@@ -936,6 +936,24 @@ class CrossTenantTestBase(TestCase):
 
 
 class ActiveOrganizationTests(CrossTenantTestBase):
+    @override_settings(ELEVENLABS_API_KEY="test-key")
+    def test_multi_membership_no_header_lists_and_creates_personal_divisions(self):
+        OrganizationMembership.objects.create(user=self.victim_admin, organization=self.attacker_org, role="viewer")
+        personal = _make_division(None, "Personal AA", owner=self.victim_admin)
+        self.client.force_login(self.victim_admin)
+        response = self.client.get("/api/divisions/")
+        self.assertEqual([item["id"] for item in response.json()], [str(personal.id)])
+        self.assertEqual(self.client.get("/api/elevenlabs/status/").json(), {"enabled": True})
+        self.assertEqual(self.client.get("/api/elevenlabs/status/", HTTP_X_ORGANIZATION_ID=str(self.attacker_org.id)).json(), {"enabled": False})
+        response = self.client.post("/api/divisions/", json.dumps({
+            "name": self.victim_division.name, "preset": "aa", "team_count": 2, "age_range": {"min": 7, "max": 10},
+        }), content_type="application/json")
+        self.assertEqual(response.status_code, 201, response.content)
+        created = Division.objects.get(id=response.json()["id"])
+        self.assertIsNone(created.organization)
+        self.assertEqual(created.owner, self.victim_admin)
+        self.assertTrue(Division.objects.filter(id=self.victim_division.id).exists())
+
     def test_multiple_memberships_list_divisions_for_selected_organization(self):
         OrganizationMembership.objects.create(
             user=self.victim_admin, organization=self.attacker_org, role="viewer"

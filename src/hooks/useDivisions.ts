@@ -8,7 +8,7 @@ import {
 } from '../types';
 import { api, ApiError } from '../api/client';
 import { saveTeamsToApi, savePlayersToApi } from '../api';
-import { hasGeneratedRosters } from '../utils/divisionAccess';
+import { divisionNameExistsInWorkspace, hasGeneratedRosters, isDivisionInWorkspace } from '../utils/divisionAccess';
 
 // Validation: A division is complete enough to persist when it has players
 export function isDivisionValid(division: Division | null): boolean {
@@ -32,8 +32,10 @@ export function isDivisionPartiallySetup(division: Division | null): boolean {
 
 export function useDivisions(userId?: string, organizationId?: string | null) {
   const [, setDivisionIds] = useState<string[]>([]);
-  const [summaries, setSummaries] = useState<DivisionSummary[]>([]);
-  const [activeDivision, setActiveDivision] = useState<Division | null>(null);
+  const [loadedSummaries, setSummaries] = useState<DivisionSummary[]>([]);
+  const [selectedDivision, setActiveDivision] = useState<Division | null>(null);
+  const summaries = loadedSummaries.filter(division => isDivisionInWorkspace(division, organizationId));
+  const activeDivision = selectedDivision && isDivisionInWorkspace(selectedDivision, organizationId) ? selectedDivision : null;
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -70,9 +72,8 @@ export function useDivisions(userId?: string, organizationId?: string | null) {
   // Check if a division name already exists (case-insensitive)
   // Only check divisions that have players - empty ones will be cleaned up by the backend
   const divisionNameExists = useCallback((name: string): boolean => {
-    const normalizedName = name.trim().toLowerCase();
-    return summaries.some(s => s.playerCount > 0 && s.name.trim().toLowerCase() === normalizedName);
-  }, [summaries]);
+    return divisionNameExistsInWorkspace(loadedSummaries, name, organizationId);
+  }, [loadedSummaries, organizationId]);
 
   // Create a new division
   const createDivision = useCallback(async (config: {

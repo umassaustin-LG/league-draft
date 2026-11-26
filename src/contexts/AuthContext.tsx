@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { api, ApiError, setSessionExpiredCallback } from '../api/client';
 import type { User, LoginCredentials, RegisterData } from '../types';
 import { selectActiveOrganization } from '../api/activeOrganization';
+import { canSelectPersonalWorkspace } from '../utils/divisionAccess';
 
 interface AuthState {
   activeOrganizationId: string | null;
@@ -215,7 +216,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, [state.isAuthenticated]);
 
   const switchOrganization = useCallback((organizationId: string) => {
-    if (!state.user?.organizations.some(m => m.organizationId === organizationId)) return;
+    if (!state.user || !(organizationId === '' && canSelectPersonalWorkspace(state.user))
+      && !state.user.organizations.some(m => m.organizationId === organizationId)) return;
     const activeOrganizationId = selectActiveOrganization(state.user, organizationId);
     setState(prev => ({ ...prev, activeOrganizationId }));
   }, [state.user]);
