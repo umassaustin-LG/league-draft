@@ -43,6 +43,8 @@ describe('results after roster edits', () => {
     const onlyPending = summarizeTeamBuilderAssignments(players, teams, [], [pending]);
     const html = renderToStaticMarkup(createElement(TeamBuilderResults, { result: onlyPending, players }));
     expect(html).not.toContain('No requests');
+    expect(html).toContain('No confirmed requests');
+    expect(html).not.toContain('100%');
     expect(onlyPending.stats.coachRequestsTotal).toBe(0);
   });
 
