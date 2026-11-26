@@ -3,7 +3,6 @@ Team views (replaces DRF TeamViewSet).
 """
 
 from django.core.exceptions import ValidationError
-from django.db.models import Q
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.http import require_http_methods
 
@@ -15,7 +14,7 @@ from .helpers import (
     parse_json_body,
     require_auth,
     require_division_admin,
-    get_organization_from_request,
+    divisions_for_request,
 )
 
 
@@ -24,21 +23,13 @@ from .helpers import (
 @require_auth
 def teams_list_create(request):
     """List teams or create a new one."""
-    organization = get_organization_from_request(request)
-
     if request.method == "GET":
         # Get teams, optionally filtered by division
         division_id = request.GET.get("division_id")
-        queryset = Team.objects.all()
+        queryset = Team.objects.filter(division__in=divisions_for_request(request))
 
         if division_id:
             queryset = queryset.filter(division_id=division_id)
-
-        # Apply organization filtering for non-master-admins
-        if request.user.role != "master_admin" and organization:
-            queryset = queryset.filter(division__organization=organization)
-        elif request.user.role != "master_admin":
-            queryset = Team.objects.none()
 
         return json_response([transform_team(t) for t in queryset])
 
@@ -52,14 +43,7 @@ def teams_list_create(request):
         return json_response({"error": "division_id is required"}, status=400)
 
     try:
-        if request.user.role == "master_admin":
-            division = Division.objects.get(id=division_id)
-        elif organization:
-            division = Division.objects.get(
-                Q(id=division_id) & (Q(organization=organization) | Q(owner=request.user))
-            )
-        else:
-            division = Division.objects.get(id=division_id, owner=request.user)
+        division = divisions_for_request(request).get(id=division_id)
     except (Division.DoesNotExist, ValueError, ValidationError):
         return json_response({"error": "Division not found"}, status=404)
 
@@ -84,15 +68,8 @@ def teams_list_create(request):
 @require_auth
 def team_detail(request, pk):
     """Retrieve or update a team."""
-    organization = get_organization_from_request(request)
-
     try:
-        if request.user.role == "master_admin":
-            team = Team.objects.get(id=pk)
-        elif organization:
-            team = Team.objects.get(id=pk, division__organization=organization)
-        else:
-            return json_response({"error": "Not found"}, status=404)
+        team = Team.objects.get(id=pk, division__in=divisions_for_request(request))
     except Team.DoesNotExist:
         return json_response({"error": "Not found"}, status=404)
 
@@ -134,8 +111,6 @@ def team_detail(request, pk):
 @require_auth
 def teams_bulk_update(request):
     """Bulk update teams."""
-    organization = get_organization_from_request(request)
-
     data, parse_error = parse_json_body(request)
     if parse_error:
         return json_response({"error": parse_error}, status=400)
@@ -150,12 +125,7 @@ def teams_bulk_update(request):
         return json_response({"error": "teams must be a list"}, status=400)
 
     try:
-        if request.user.role == "master_admin":
-            division = Division.objects.get(id=division_id)
-        elif organization:
-            division = Division.objects.get(id=division_id, organization=organization)
-        else:
-            return json_response({"error": "Division not found"}, status=404)
+        division = divisions_for_request(request).get(id=division_id)
     except (Division.DoesNotExist, ValueError, ValidationError):
         return json_response({"error": "Division not found"}, status=404)
 
@@ -191,15 +161,8 @@ def teams_bulk_update(request):
 @require_auth
 def team_assign_coach_kid(request, pk):
     """Assign a player as coach's kid."""
-    organization = get_organization_from_request(request)
-
     try:
-        if request.user.role == "master_admin":
-            team = Team.objects.get(id=pk)
-        elif organization:
-            team = Team.objects.get(id=pk, division__organization=organization)
-        else:
-            return json_response({"error": "Not found"}, status=404)
+        team = Team.objects.get(id=pk, division__in=divisions_for_request(request))
     except Team.DoesNotExist:
         return json_response({"error": "Not found"}, status=404)
 
@@ -239,16 +202,9 @@ def team_assign_coach_kid(request, pk):
 @require_auth
 def team_remove_coach_kid(request, pk, player_id):
     """Remove coach's kid assignment."""
-    organization = get_organization_from_request(request)
-
     # Verify team access
     try:
-        if request.user.role == "master_admin":
-            team = Team.objects.get(id=pk)
-        elif organization:
-            team = Team.objects.get(id=pk, division__organization=organization)
-        else:
-            return json_response({"error": "Not found"}, status=404)
+        team = Team.objects.get(id=pk, division__in=divisions_for_request(request))
     except Team.DoesNotExist:
         return json_response({"error": "Not found"}, status=404)
 

@@ -12,10 +12,10 @@ from functools import wraps
 from typing import Any, Optional, Tuple
 
 from django.conf import settings
-from django.db.models import F
+from django.db.models import F, Q
 from django.http import JsonResponse
 
-from ..models import RateLimitCounter
+from ..models import Division, RateLimitCounter
 
 
 def json_response(data: Any, status: int = 200) -> JsonResponse:
@@ -89,11 +89,21 @@ def require_org_admin(view_func):
 require_league_admin = require_org_admin
 
 
+def divisions_for_request(request):
+    if request.user.role == "master_admin":
+        return Division.objects.all()
+    access = Q(organization__isnull=True, owner=request.user)
+    organization = get_organization_from_request(request)
+    if organization is not None:
+        access |= Q(organization=organization)
+    return Division.objects.filter(access)
+
+
 def can_manage_division(user, division) -> bool:
     """Owner of a personal division, admin of the division's own organization, or master admin."""
     if user.role == "master_admin":
         return True
-    if division.owner_id is not None and division.owner_id == user.id:
+    if division.organization_id is None and division.owner_id == user.id:
         return True
     return bool(division.organization_id and user.is_org_admin(division.organization))
 

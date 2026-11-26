@@ -20,7 +20,8 @@ from .helpers import (
     json_response,
     parse_json_body,
     require_auth,
-    get_league_from_request,
+    divisions_for_request,
+    require_division_admin,
 )
 
 
@@ -36,11 +37,7 @@ def _get_full_draft_response(draft_state):
 
 def _verify_division_access(request, division):
     """Verify user has access to the division's league."""
-    if request.user.role == "master_admin":
-        return None
-
-    league = get_league_from_request(request)
-    if not league or league != division.league:
+    if not divisions_for_request(request).filter(id=division.id).exists():
         return json_response(
             {"error": "You do not have access to this division"},
             status=403
@@ -50,15 +47,10 @@ def _verify_division_access(request, division):
 
 def _require_league_admin(request, division):
     """Verify user is admin of the division's league."""
-    if request.user.role == "master_admin":
-        return None
-
-    if not request.user.is_league_admin(division.league):
-        return json_response(
-            {"error": "Only league admins can perform this action"},
-            status=403
-        )
-    return None
+    denied = _verify_division_access(request, division)
+    if denied:
+        return denied
+    return require_division_admin(request, division)
 
 
 @require_http_methods(["GET"])

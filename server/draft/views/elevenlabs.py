@@ -9,6 +9,7 @@ from elevenlabs.core.api_error import ApiError
 from httpx import HTTPError
 
 from ..elevenlabs_client import get_elevenlabs_client
+from ..models import Division
 from .helpers import RateLimiter, json_response, rate_limit, require_auth, require_org_admin
 
 
@@ -25,7 +26,8 @@ def _can_announce(request):
     organization = getattr(request, "organization", None) or getattr(request, "league", None)
     if organization is not None:
         return bool(user.is_org_admin(organization))
-    return user.memberships.filter(role="admin").exists()
+    return (user.memberships.filter(role="admin").exists()
+            or Division.objects.filter(owner=user, organization__isnull=True).exists())
 
 
 @require_http_methods(["GET"])

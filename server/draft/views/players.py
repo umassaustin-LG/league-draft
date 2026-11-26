@@ -16,7 +16,7 @@ from .helpers import (
     parse_json_body,
     require_auth,
     require_division_admin,
-    get_organization_from_request,
+    divisions_for_request,
 )
 
 
@@ -35,21 +35,13 @@ def _get_division_team(team_id, division):
 @require_auth
 def players_list_create(request):
     """List players or create a new one."""
-    organization = get_organization_from_request(request)
-
     if request.method == "GET":
         # Get players, optionally filtered by division
         division_id = request.GET.get("division_id")
-        queryset = Player.objects.all()
+        queryset = Player.objects.filter(division__in=divisions_for_request(request))
 
         if division_id:
             queryset = queryset.filter(division_id=division_id)
-
-        # Apply organization filtering for non-master-admins
-        if request.user.role != "master_admin" and organization:
-            queryset = queryset.filter(division__organization=organization)
-        elif request.user.role != "master_admin":
-            queryset = Player.objects.none()
 
         return json_response([transform_player(p) for p in queryset])
 
@@ -63,12 +55,7 @@ def players_list_create(request):
         return json_response({"error": "division_id is required"}, status=400)
 
     try:
-        if request.user.role == "master_admin":
-            division = Division.objects.get(id=division_id)
-        elif organization:
-            division = Division.objects.get(id=division_id, organization=organization)
-        else:
-            return json_response({"error": "Division not found"}, status=404)
+        division = divisions_for_request(request).get(id=division_id)
     except Division.DoesNotExist:
         return json_response({"error": "Division not found"}, status=404)
 
@@ -115,15 +102,8 @@ def players_list_create(request):
 @require_auth
 def player_detail(request, pk):
     """Retrieve, update, or delete a player."""
-    organization = get_organization_from_request(request)
-
     try:
-        if request.user.role == "master_admin":
-            player = Player.objects.get(id=pk)
-        elif organization:
-            player = Player.objects.get(id=pk, division__organization=organization)
-        else:
-            return json_response({"error": "Not found"}, status=404)
+        player = Player.objects.get(id=pk, division__in=divisions_for_request(request))
     except Player.DoesNotExist:
         return json_response({"error": "Not found"}, status=404)
 
@@ -184,8 +164,6 @@ def player_detail(request, pk):
 @require_auth
 def players_bulk_create(request):
     """Bulk create players."""
-    organization = get_organization_from_request(request)
-
     data, parse_error = parse_json_body(request)
     if parse_error:
         return json_response({"error": parse_error}, status=400)
@@ -198,12 +176,7 @@ def players_bulk_create(request):
     players_data = cleaned["players"]
 
     try:
-        if request.user.role == "master_admin":
-            division = Division.objects.get(id=division_id)
-        elif organization:
-            division = Division.objects.get(id=division_id, organization=organization)
-        else:
-            return json_response({"error": "Division not found"}, status=404)
+        division = divisions_for_request(request).get(id=division_id)
     except Division.DoesNotExist:
         return json_response({"error": "Division not found"}, status=404)
 
@@ -291,8 +264,6 @@ def players_bulk_create(request):
 @require_auth
 def players_delete_by_division(request):
     """Delete all players in a division."""
-    organization = get_organization_from_request(request)
-
     division_id = request.GET.get("division_id")
     if not division_id:
         return json_response(
@@ -302,12 +273,7 @@ def players_delete_by_division(request):
 
     # Verify division access
     try:
-        if request.user.role == "master_admin":
-            division = Division.objects.get(id=division_id)
-        elif organization:
-            division = Division.objects.get(id=division_id, organization=organization)
-        else:
-            return json_response({"error": "Division not found"}, status=404)
+        division = divisions_for_request(request).get(id=division_id)
     except Division.DoesNotExist:
         return json_response({"error": "Division not found"}, status=404)
 
