@@ -658,7 +658,7 @@ function App() {
         players: draftState.players.length > 0 ? draftState.players : activeDivision.players,
         teams: draftState.teams.length > 0 ? draftState.teams : activeDivision.teams,
         draftState: draftState.picks.length > 0 ? draftState : activeDivision.draftState,
-        phase: getPersistedDraftPhase(phase, draftState.isDraftComplete),
+        phase: getPersistedDraftPhase(phase, activeDivision.phase),
       });
     }
     clearActiveDivision();

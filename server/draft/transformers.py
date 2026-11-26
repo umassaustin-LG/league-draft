@@ -176,10 +176,14 @@ def transform_draft_state(draft_state) -> dict:
     }
 
 
+def _division_phase(division) -> str:
+    draft_state = getattr(division, "draft_state", None)
+    return "complete" if draft_state and draft_state.is_draft_complete else division.phase
+
+
 def transform_division_summary(division) -> dict:
     """Transform a Division to summary dict (for list view)."""
     counts = division.players.aggregate(total=Count("pk"), assigned=Count("drafted_by_team"))
-    draft_state = getattr(division, "draft_state", None)
     result = {
         "id": str(division.id),
         "name": division.name,
@@ -188,7 +192,7 @@ def transform_division_summary(division) -> dict:
         "player_count": counts["total"],
         "has_generated_rosters": division.mode == "league-generated" and counts["assigned"] > 0,
         "mode": division.mode,
-        "phase": "complete" if draft_state and draft_state.is_draft_complete else division.phase,
+        "phase": _division_phase(division),
         "created_at": division.created_at.isoformat(),
         "completed_at": division.completed_at.isoformat() if division.completed_at else None,
     }
@@ -229,7 +233,7 @@ def transform_division(division, include_all: bool = False) -> dict:
         "scoring_weights": division.scoring_weights,
         "scoring_mode": division.scoring_mode,
         "mode": division.mode,
-        "phase": division.phase,
+        "phase": _division_phase(division),
         "created_at": division.created_at.isoformat(),
         "updated_at": division.updated_at.isoformat(),
         "completed_at": division.completed_at.isoformat() if division.completed_at else None,

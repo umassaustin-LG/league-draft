@@ -942,9 +942,20 @@ class CompletedDivisionSummaryTests(CrossTenantTestBase):
         state = DraftState.objects.create(division=self.victim_division, draft_format="straight")
         self.client.force_login(self.victim_admin)
         self.assertEqual(self.client.get("/api/divisions/").json()[0]["phase"], "draft")
+        url = f"/api/divisions/{self.victim_division.id}/?include=all"
+        self.assertEqual(self.client.get(url).json()["phase"], "draft")
         state.is_draft_complete = True
         state.save()
         self.assertEqual(self.client.get("/api/divisions/").json()[0]["phase"], "complete")
+        for user in (self.victim_admin, self.viewer):
+            self.client.force_login(user)
+            self.assertEqual(self.client.get(url).json()["phase"], "complete")
+            self.assertTrue(self.client.get(url).json()["draft_state"]["is_draft_complete"])
+
+    def test_summary_and_detail_keep_the_phase_without_a_draft_state(self):
+        self.client.force_login(self.viewer)
+        self.assertEqual(self.client.get("/api/divisions/").json()[0]["phase"], self.victim_division.phase)
+        self.assertEqual(self.client.get(f"/api/divisions/{self.victim_division.id}/").json()["phase"], self.victim_division.phase)
 
 
 class TeamBuilderAccessTests(CrossTenantTestBase):
