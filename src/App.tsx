@@ -39,7 +39,7 @@ import {
   AppPhase,
 } from './types';
 import { parseCSVWithMapping, CoachAssignment } from './utils/csvParser';
-import { canManageDivision, canUsePersonalWorkspace } from './utils/divisionAccess';
+import { canManageDivision, canUsePersonalWorkspace, isDivisionInWorkspace } from './utils/divisionAccess';
 import { getMappingRecoveryPhase } from './utils/importPhase';
 import { savePlayersToApi, saveTeamsToApi } from './api';
 
@@ -875,7 +875,7 @@ function App() {
     // Only check names of divisions that have players (non-empty divisions)
     // Empty divisions are not shown to users, so shouldn't block new creation
     const existingNames = summaries
-      .filter(s => s.playerCount > 0)
+      .filter(s => s.playerCount > 0 && isDivisionInWorkspace(s, activeOrganizationId))
       .map(s => s.name);
 
     return (

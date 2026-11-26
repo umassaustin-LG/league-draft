@@ -3,13 +3,14 @@ import type { Division, DivisionSummary, User } from './types';
 import App from './App';
 import { JoinPage } from './components/JoinPage';
 import { ResetPasswordPage } from './components/ResetPasswordPage';
+import { DivisionCreator } from './components/DivisionCreator';
 import { api } from './api/client';
 
 const harness = vi.hoisted(() => ({
   values: [] as unknown[], cursor: 0, effects: [] as (() => void)[],
   auth: { user: null as User | null, isAuthenticated: true, isInitialized: true, activeOrganizationId: null as string | null,
     logout: vi.fn(), checkAuth: vi.fn(), switchOrganization: vi.fn() },
-  divisions: { summaries: [], activeDivision: null, clearActiveDivision: vi.fn() },
+  divisions: { summaries: [] as DivisionSummary[], activeDivision: null, clearActiveDivision: vi.fn() },
 }));
 
 vi.mock('react', async importOriginal => ({
@@ -63,6 +64,7 @@ beforeEach(() => {
   harness.cursor = 0;
   harness.auth.activeOrganizationId = null;
   harness.auth.isAuthenticated = true;
+  harness.divisions.summaries = [];
   harness.auth.user = { id: 'user', organizations: [{ organizationId: 'one', role: 'admin' }], leagues: [] } as unknown as User;
 });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
@@ -97,6 +99,27 @@ describe('workspace changes and URL modes', () => {
 });
 
 describe('server-scoped division lists', () => {
+  it.each([
+    ['one', ['League One']], ['two', ['League Two']], [null, ['Personal']],
+  ] as const)('checks creation names only in the selected workspace: %s', (organizationId, existingNames) => {
+    vi.stubGlobal('window', { location: new URL('https://example.com'), scrollTo: vi.fn(),
+      addEventListener: vi.fn(), removeEventListener: vi.fn(), history: { replaceState: vi.fn(), pushState: vi.fn() } });
+    harness.auth.activeOrganizationId = organizationId;
+    harness.auth.user!.organizations.push({ organizationId: 'two', role: 'admin' } as User['organizations'][number]);
+    harness.divisions.summaries = [
+      { id: 'personal', name: 'Personal', playerCount: 2 },
+      { id: 'one', organizationId: 'one', name: 'League One', playerCount: 2 },
+      { id: 'two', organizationId: 'two', name: 'League Two', playerCount: 2 },
+      { id: 'empty', organizationId: 'one', name: 'Empty', playerCount: 0 },
+    ] as DivisionSummary[];
+    const selector = renderApp();
+    expect(selector.props.divisions).toEqual(harness.divisions.summaries);
+    selector.props.onCreateNew();
+    const creator = renderApp();
+    expect(creator.type).toBe(DivisionCreator);
+    expect(creator.props.existingNames).toEqual(existingNames);
+  });
+
   it('retains personal divisions for single-membership users and other leagues for master admins', async () => {
     const serverList = [
       { id: 'personal', name: 'Personal', playerCount: 2 },
