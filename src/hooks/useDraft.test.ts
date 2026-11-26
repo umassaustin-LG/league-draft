@@ -97,8 +97,12 @@ describe('draft finalization', () => {
     expect(renderHook().pendingComplete).toBe(false);
     renderHook().requestFinalization();
     expect(renderHook().pendingComplete).toBe(false);
+    renderHook().finalizeDraft();
+    expect(renderHook().phase).toBe('draft');
     renderHook().loadDivisionState({ ...division, phase: 'upload', draftState: null, players: [], teams: [] });
     expect(renderHook().pendingComplete).toBe(false);
+    expect(renderHook().phase).toBe('upload');
+    renderHook().finalizeDraft();
     expect(renderHook().phase).toBe('upload');
   });
 
@@ -108,6 +112,56 @@ describe('draft finalization', () => {
     expect(renderHook().pendingComplete).toBe(true);
     expect(renderHook().phase).toBe('draft');
     expect(renderHook().draftState.isDraftComplete).toBe(false);
+    renderHook().finalizeDraft();
+    expect(renderHook().phase).toBe('complete');
+  });
+
+  it('closes finalization during undo and rejects stale confirmation handlers after the last pick is undone', async () => {
+    const completed = { ...state, isDraftComplete: true, currentTeamId: null,
+      players: players.map(player => ({ ...player, isDrafted: true })) };
+    renderHook().loadDivisionState({ ...division, draftState: completed });
+    let finishUndo!: (result: Awaited<ReturnType<typeof api.undoLastPick>>) => void;
+    vi.spyOn(api, 'undoLastPick').mockImplementation(() => new Promise(resolve => { finishUndo = resolve; }));
+    const stale = renderHook();
+    const undo = stale.undoLastPick();
+    expect(renderHook().isLoading).toBe(true);
+    expect(renderHook().pendingComplete).toBe(false);
+    stale.requestFinalization();
+    stale.finalizeDraft();
+    expect(renderHook().pendingComplete).toBe(false);
+    expect(renderHook().phase).toBe('draft');
+    finishUndo({ draftState: state, players, teams: state.teams });
+    await undo;
+    expect(renderHook().isLoading).toBe(false);
+    expect(renderHook().pendingComplete).toBe(false);
+    stale.requestFinalization();
+    stale.finalizeDraft();
+    expect(renderHook().phase).toBe('draft');
+    expect(renderHook().pendingComplete).toBe(false);
+  });
+
+  it('cancels the delayed final-pick confirmation when undo happens before it opens', async () => {
+    renderHook().loadDivisionState(division);
+    vi.spyOn(api, 'draftPlayer').mockResolvedValue({ draftState: { ...state, isDraftComplete: true }, players, teams: state.teams });
+    await renderHook().draftPlayer('p9');
+    vi.spyOn(api, 'undoLastPick').mockResolvedValue({ draftState: state, players, teams: state.teams });
+    await renderHook().undoLastPick();
+    vi.runAllTimers();
+    expect(renderHook().pendingComplete).toBe(false);
+    expect(renderHook().phase).toBe('draft');
+  });
+
+  it('keeps the confirmation closed after a failed undo and permits reopening for the unchanged complete draft', async () => {
+    renderHook().loadDivisionState({ ...division, draftState: { ...state, isDraftComplete: true } });
+    vi.spyOn(api, 'undoLastPick').mockRejectedValue(new Error('Undo failed'));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await renderHook().undoLastPick();
+    expect(renderHook().isLoading).toBe(false);
+    expect(renderHook().pendingComplete).toBe(false);
+    expect(renderHook().phase).toBe('draft');
+    expect(renderHook().error).toBe('Failed to undo pick. Please try again.');
+    renderHook().requestFinalization();
+    expect(renderHook().pendingComplete).toBe(true);
   });
 
   it('leaves the phase and completion prompt unchanged if the final pick fails', async () => {

@@ -49,6 +49,7 @@ export const useDraft = (_divisionId?: string) => {
   const [savedDraftState, setDraftState] = useState<DraftState>(initialDraftState);
   const draftState = useMemo(() => clearForeignCoachMandatoryPick(savedDraftState), [savedDraftState]);
   const [pendingComplete, setPendingComplete] = useState(false);
+  const completionTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isViewingCompletedDraftBoard, setIsViewingCompletedDraftBoard] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -270,7 +271,7 @@ export const useDraft = (_divisionId?: string) => {
         // Check if draft is complete
         const availablePlayers = result.players.filter(p => !p.isDrafted);
         if (availablePlayers.length === 0 || result.draftState.isDraftComplete) {
-          setTimeout(() => setPendingComplete(true), 300);
+          completionTimeout.current = setTimeout(() => setPendingComplete(true), 300);
         }
       } catch (err) {
         console.error('Failed to draft player:', err);
@@ -314,6 +315,8 @@ export const useDraft = (_divisionId?: string) => {
     try {
       operationInProgress.current = true;
       setIsLoading(true);
+      if (completionTimeout.current !== null) clearTimeout(completionTimeout.current);
+      setPendingComplete(false);
       const result = await api.undoLastPick(draftStateId.current, expectedPick ?? draftState.picks[draftState.picks.length - 1]?.pick);
       setDraftState(result.draftState);
       setError(null);
@@ -420,12 +423,22 @@ export const useDraft = (_divisionId?: string) => {
     }
   }, [isLoading]);
 
+  const canFinalize = draftState.isDraftComplete
+    || draftState.players.length > 0 && draftState.players.every(player => player.isDrafted);
+  const finalizationState = useRef({ phase, canFinalize });
+  finalizationState.current = { phase, canFinalize };
+
   // Finalize draft and navigate to complete phase
   const finalizeDraft = useCallback(() => {
+    if (operationInProgress.current || isLoading) return;
+    if (finalizationState.current.phase !== 'draft' || !finalizationState.current.canFinalize) {
+      setPendingComplete(false);
+      return;
+    }
     setPendingComplete(false);
     setIsViewingCompletedDraftBoard(false);
     setPhase('complete');
-  }, []);
+  }, [isLoading]);
 
   // Cancel pending complete (go back to review draft)
   const cancelPendingComplete = useCallback(() => {
@@ -433,11 +446,11 @@ export const useDraft = (_divisionId?: string) => {
   }, []);
 
   const requestFinalization = useCallback(() => {
-    if (phase === 'draft' && (draftState.isDraftComplete
-      || draftState.players.length > 0 && draftState.players.every(player => player.isDrafted))) {
+    if (!operationInProgress.current && !isLoading
+      && finalizationState.current.phase === 'draft' && finalizationState.current.canFinalize) {
       setPendingComplete(true);
     }
-  }, [phase, draftState]);
+  }, [isLoading]);
 
   // Clear mandatory pick error
   const clearMandatoryPickError = useCallback(() => {

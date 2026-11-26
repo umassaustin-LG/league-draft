@@ -438,7 +438,7 @@ export const DraftBoard = ({
         )}
         {!onViewResults && controls?.onRequestComplete && !controls.pendingComplete
           && (draftState.isDraftComplete || draftState.players.length > 0 && availablePlayers.length === 0) && (
-          <button onClick={controls.onRequestComplete} className="mb-4 ml-2 rounded-button border border-rule px-4 py-2 text-ink hover:border-rule-strong">
+          <button onClick={controls.onRequestComplete} disabled={isLoading} className="mb-4 ml-2 rounded-button border border-rule px-4 py-2 text-ink hover:border-rule-strong">
             Finalize draft
           </button>
         )}

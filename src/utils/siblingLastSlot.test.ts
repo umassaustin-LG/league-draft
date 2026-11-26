@@ -95,6 +95,15 @@ describe('live last-slot sibling recovery', () => {
     expect(render()).toContain('Finalize draft');
   });
 
+  it('disables reopening finalization while a draft request is saving', () => {
+    const state = { ...finalPickState(), isDraftComplete: true };
+    const markup = renderToStaticMarkup(createElement(DraftBoard, {
+      draftState: state, controls: { ...controls, onRequestComplete: vi.fn() }, isLoading: true,
+      rosterSize: 2, enforceAgeLimit: false, maxPerAge: 0,
+    }));
+    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>\s*Finalize draft\s*<\/button>/);
+  });
+
   it('does not transfer a retained sibling lock after another team drafts the released sibling', () => {
     const players = [
       player('root', { siblingId: 'kept', isDrafted: true, draftedByTeamId: 'a' }),
