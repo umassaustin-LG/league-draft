@@ -13,7 +13,7 @@ import {
   ClipboardCheck,
 } from 'lucide-react';
 import { Division, Player, Team, ResolvedRequest, RequestsFirstConfig, DEFAULT_REQUESTS_FIRST_CONFIG, TradeCandidate, AppPhase, TeamBuilderSettings } from '../types';
-import { restoreRequestResolutions } from '../utils/teamBuilderSettings';
+import { remapSavedResolutions, restoreRequestResolutions, saveRequestResolutions } from '../utils/teamBuilderSettings';
 import { RegistrationRecord } from '../types/evaluation';
 import { EvaluationImport } from './evaluation';
 import { NameMatchResolver, TeamBuilderResults, RequestConfirmation, TradeSuggestions } from './teamBuilder';
@@ -143,7 +143,9 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
   const [showSwapModal, setShowSwapModal] = useState(false);
 
   // Request confirmation state
-  const [resolvedRequests, setResolvedRequests] = useState<ResolvedRequest[]>(division.teamBuilderSettings?.resolvedRequests ?? []);
+  const [resolvedRequests, setResolvedRequests] = useState<ResolvedRequest[]>(() => remapSavedResolutions(
+    division.teamBuilderSettings?.resolvedRequests ?? [], division.players, division.teams.map(team => team.id),
+  ));
   const [algorithmMode, setAlgorithmMode] = useState<AlgorithmMode>(division.teamBuilderSettings?.algorithmMode ?? 'requests-first');
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [requestsFirstConfig, _setRequestsFirstConfig] = useState<RequestsFirstConfig>(DEFAULT_REQUESTS_FIRST_CONFIG);
@@ -459,7 +461,7 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
     // Prepare resolved requests for confirmation UI
     const preparedRequests = prepareRequestsForConfirmation(normResult, requestsFirstConfig);
     setResolvedRequests(previous => restoreRequestResolutions(
-      preparedRequests, previous, evalPlayers.map(player => player.id), teams.map(team => team.id),
+      preparedRequests, previous, evalPlayers, teams.map(team => team.id),
     ));
 
     // Go to request confirmation step
@@ -625,7 +627,7 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
     setFinalPlayers(updatedPlayers);
     setFinalTeams(updatedTeams);
     setStep('results');
-    await onUpdateSettings?.({ config, algorithmMode, resolvedRequests });
+    await onUpdateSettings?.({ config, algorithmMode, resolvedRequests: saveRequestResolutions(resolvedRequests, updatedPlayers) });
     await onUpdateTeams?.(updatedTeams);
     await onUpdatePlayers?.(updatedPlayers);
     } catch (err) {

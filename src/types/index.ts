@@ -409,6 +409,11 @@ export interface DivisionAgeRange {
   max: number;
 }
 
+export interface SavedRequestResolution extends ResolvedRequest {
+  requesterIdentity?: string;
+  targetPlayerIdentity?: string;
+}
+
 export interface TeamBuilderSettings {
   config: {
     minRosterSize: number;
@@ -419,7 +424,7 @@ export interface TeamBuilderSettings {
     prioritizeBalance?: boolean;
   };
   algorithmMode: 'balance-first' | 'requests-first';
-  resolvedRequests: ResolvedRequest[];
+  resolvedRequests: SavedRequestResolution[];
 }
 
 export interface Division {
