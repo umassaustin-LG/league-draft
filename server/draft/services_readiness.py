@@ -90,7 +90,14 @@ def evaluate_pick(draft_state, player, team):
             add("age_cap", "warn", f"This pick reaches the age {player.little_league_age} cap")
     if not division.age_range_min <= player.little_league_age <= division.age_range_max:
         add("age_range", "warn", f"{player.name} is outside the division age range")
-    siblings = [p for p in sibling_group(player, players) if not p.is_drafted and not p.locked_to_team_id]
+    group = sibling_group(player, players)
+    for sibling in group:
+        if sibling.is_coach_kid and sibling.coach_team_id and sibling.coach_team_id != team.id:
+            coach_team_name = team_display_name(sibling.coach_team)
+            warnings.append({"code": "sibling_coach_conflict", "level": "block", "message":
+                f"{player.name.strip()}'s sibling {sibling.name.strip()} is {coach_team_name}'s coach kid — drafting splits them; {coach_team_name} should take {player.name.strip()}"})
+    siblings = [p for p in group if not p.is_drafted and not p.locked_to_team_id
+                and not (p.is_coach_kid and p.coach_team_id and p.coach_team_id != team.id)]
     owed = {p.id for p in players if not p.is_drafted and p.id != player.id and ((p.is_coach_kid and p.coach_team_id == team.id) or p.locked_to_team_id == team.id)} | {p.id for p in siblings}
     remaining = division.roster_size - draft_state.picks.filter(team_id=team.id).count() - 1
     if siblings and remaining < len(owed):

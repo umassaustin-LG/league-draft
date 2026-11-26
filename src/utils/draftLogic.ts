@@ -1,8 +1,21 @@
 import { DraftState, Player } from '../types';
 
-export function releaseExhaustedSiblingLocks(players: Player[], remainingPicks: Record<string, number>): void {
+export function clearForeignCoachMandatoryPick(state: DraftState): DraftState {
+  const player = state.players.find(player => player.id === state.mandatoryPick?.playerId);
+  return player?.isCoachKid && player.coachTeamId && player.coachTeamId !== state.currentTeamId
+    ? { ...state, mandatoryPick: undefined }
+    : state;
+}
+
+export function releaseExhaustedSiblingLocks(players: Player[], remainingPicks: Record<string, number>, includeCoachKids = true): void {
   const locks = new Map<string, Player[]>();
+  const coachKids = new Map<string, number>();
   for (const player of players) {
+    if (includeCoachKids && !player.isDrafted && player.isCoachKid && player.coachTeamId) {
+      coachKids.set(player.coachTeamId, (coachKids.get(player.coachTeamId) ?? 0) + 1);
+      if (player.lockedToTeamId !== player.coachTeamId) player.lockedToTeamId = undefined;
+      continue;
+    }
     if (!player.isDrafted && player.lockedToTeamId) {
       const group = locks.get(player.lockedToTeamId) ?? [];
       group.push(player);
@@ -12,7 +25,7 @@ export function releaseExhaustedSiblingLocks(players: Player[], remainingPicks: 
   for (const [teamId, group] of locks) {
     if (remainingPicks[teamId] === undefined) continue;
     group.sort((a, b) => a.rank - b.rank || a.id.localeCompare(b.id));
-    for (const player of group.slice(Math.max(0, remainingPicks[teamId]))) player.lockedToTeamId = undefined;
+    for (const player of group.slice(Math.max(0, remainingPicks[teamId] - (coachKids.get(teamId) ?? 0)))) player.lockedToTeamId = undefined;
   }
 }
 
@@ -132,7 +145,8 @@ export function getMandatoryPick(
   // Check for sibling requirements
   if (options.includeSiblings) {
     const siblingToDraft = players.find((p) => {
-      if (p.isDrafted || !p.siblingId) return false;
+      if (p.isDrafted || !p.siblingId || (options.includeCoachKids && p.isCoachKid && p.coachTeamId && p.coachTeamId !== teamId)) return false;
+      if (p.lockedToTeamId && p.lockedToTeamId !== teamId) return false;
 
       // If locked to this team, must draft in their lockedToRound or projectedRound
       if (p.lockedToTeamId === teamId) {
@@ -183,8 +197,8 @@ export function getMandatoryPick(
         (p) =>
           !p.isDrafted &&
           p.lockedToTeamId === teamId &&
-          // Exclude coach's kids already counted
-          !(p.isCoachKid && p.coachTeamId === teamId)
+          // Coach assignments take precedence over sibling locks.
+          !(options.includeCoachKids && p.isCoachKid && p.coachTeamId)
       );
       lockedSiblings.forEach(p => allMandatory.push({ player: p, reason: 'sibling' }));
     }
@@ -222,7 +236,8 @@ export function getMandatoryPick(
 export function lockSiblingToTeam(
   players: Player[],
   draftedPlayer: Player,
-  teamId: string
+  teamId: string,
+  includeCoachKids = true
 ): void {
   // Track which players we've already processed to avoid infinite loops
   const processed = new Set<string>([draftedPlayer.id]);
@@ -235,7 +250,11 @@ export function lockSiblingToTeam(
     if (current.siblingId) {
       const sibling = players.find(p => p.id === current.siblingId);
       if (sibling && !sibling.isDrafted && !processed.has(sibling.id)) {
-        if (!sibling.lockedToTeamId || sibling.lockedToTeamId === teamId) sibling.lockedToTeamId = teamId;
+        if (!includeCoachKids || !sibling.isCoachKid || !sibling.coachTeamId || sibling.coachTeamId === teamId) {
+          if (!sibling.lockedToTeamId || sibling.lockedToTeamId === teamId) sibling.lockedToTeamId = teamId;
+        } else {
+          sibling.lockedToTeamId = undefined;
+        }
         processed.add(sibling.id);
         toProcess.push(sibling); // Follow the chain
       }
@@ -244,7 +263,11 @@ export function lockSiblingToTeam(
     // Also check for any players whose siblingId points to current (reverse direction)
     players.forEach(p => {
       if (p.siblingId === current.id && !p.isDrafted && !processed.has(p.id)) {
-        if (!p.lockedToTeamId || p.lockedToTeamId === teamId) p.lockedToTeamId = teamId;
+        if (!includeCoachKids || !p.isCoachKid || !p.coachTeamId || p.coachTeamId === teamId) {
+          if (!p.lockedToTeamId || p.lockedToTeamId === teamId) p.lockedToTeamId = teamId;
+        } else {
+          p.lockedToTeamId = undefined;
+        }
         processed.add(p.id);
         toProcess.push(p); // Follow the chain
       }
@@ -273,7 +296,8 @@ export function getBestAvailable(
       }
 
       // Only exclude siblings locked to other teams if includeSiblings is ON
-      if (options.includeSiblings && p.lockedToTeamId && p.lockedToTeamId !== currentTeamId) {
+      if (options.includeSiblings && p.lockedToTeamId && p.lockedToTeamId !== currentTeamId
+        && !(options.includeCoachKids && p.isCoachKid && p.coachTeamId)) {
         return false;
       }
 

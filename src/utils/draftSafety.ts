@@ -9,6 +9,7 @@ export interface DraftSafetyConfig {
   ageRange: { min: number; max: number };
   rosterSize: number;
   teamCount: number;
+  teams?: Team[];
 }
 
 export function getPickWarnings(
@@ -44,7 +45,16 @@ export function getPickWarnings(
     }
     changed = previousSize !== group.size;
   }
-  const siblings = players.filter(p => p.id !== player.id && group.has(p.id) && !p.isDrafted && !p.lockedToTeamId);
+  const coachSiblings = players.filter(p => p.id !== player.id && group.has(p.id)
+    && p.isCoachKid && p.coachTeamId && p.coachTeamId !== team.id);
+  for (const sibling of coachSiblings) {
+    const coachTeam = config.teams?.find(team => team.id === sibling.coachTeamId);
+    const coachTeamName = coachTeam ? getTeamDisplayName(coachTeam) : 'their coach’s team';
+    warnings.push({ code: 'sibling_coach_conflict', level: 'block',
+      message: `${player.name.trim()}'s sibling ${sibling.name.trim()} is ${coachTeamName}'s coach kid — drafting splits them; ${coachTeamName} should take ${player.name.trim()}` });
+  }
+  const siblings = players.filter(p => p.id !== player.id && group.has(p.id) && !p.isDrafted && !p.lockedToTeamId
+    && !(p.isCoachKid && p.coachTeamId && p.coachTeamId !== team.id));
   const owed = new Set(players.filter(p => !p.isDrafted && p.id !== player.id && (
     (p.isCoachKid && p.coachTeamId === team.id) || p.lockedToTeamId === team.id
   )).map(p => p.id));

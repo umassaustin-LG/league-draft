@@ -183,7 +183,7 @@ export const DraftBoardPlayerGrid = ({
     players.forEach((player) => {
       if (player.isDrafted) return;
       const isCoachKidForOther = player.isCoachKid && player.coachTeamId && player.coachTeamId !== currentTeamId;
-      const isSiblingLockedToOther = player.lockedToTeamId && player.lockedToTeamId !== currentTeamId;
+      const isSiblingLockedToOther = !(player.isCoachKid && player.coachTeamId) && player.lockedToTeamId && player.lockedToTeamId !== currentTeamId;
       if (isCoachKidForOther || isSiblingLockedToOther) return;
       const age = player.littleLeagueAge;
       if (!byAge[age]) byAge[age] = [];
@@ -227,7 +227,7 @@ export const DraftBoardPlayerGrid = ({
       player.coachTeamId &&
       player.coachTeamId !== currentTeamId;
 
-    const isSiblingLockedToOtherTeam = player.lockedToTeamId &&
+    const isSiblingLockedToOtherTeam = !(player.isCoachKid && player.coachTeamId) && player.lockedToTeamId &&
       player.lockedToTeamId !== currentTeamId;
 
     return isCoachKidForOtherTeam || isSiblingLockedToOtherTeam;
@@ -550,8 +550,9 @@ export const DraftBoardPlayerGrid = ({
               const hasRoundOverride = player.lockedToRound && player.lockedToRound !== player.projectedRound;
               const isLockedToTeam = (player.isCoachKid && player.coachTeamId) || player.lockedToTeamId;
               const isLockedToOtherTeam = isLockedToTeam && !player.isDrafted &&
-                ((player.isCoachKid && player.coachTeamId !== currentTeamId) ||
-                 (player.lockedToTeamId && player.lockedToTeamId !== currentTeamId));
+                (player.isCoachKid && player.coachTeamId
+                  ? player.coachTeamId !== currentTeamId
+                  : player.lockedToTeamId && player.lockedToTeamId !== currentTeamId);
 
               const rowState = player.isDrafted
                 ? 'bg-surface-2 opacity-50'

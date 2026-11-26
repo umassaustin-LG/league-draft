@@ -35,6 +35,7 @@ export function runSimulation(
     p.draftedByTeamId = undefined;
     p.draftedInRound = undefined;
     p.draftedAtPick = undefined;
+    if (options.includeCoachKids && p.isCoachKid && p.coachTeamId) p.lockedToTeamId = undefined;
     // Note: Don't reset lockedToTeamId - it may have been set for siblings of coach's kids
   });
 
@@ -45,12 +46,31 @@ export function runSimulation(
   });
 
   const totalRounds = Math.ceil(simPlayers.length / simTeams.length);
+  if (options.includeCoachKids && options.includeSiblings) {
+    const groups = new Set(getSiblingGroups(simPlayers).values());
+    for (const group of groups) {
+      const coachTeams = new Set(group.filter(player => player.isCoachKid && player.coachTeamId).map(player => player.coachTeamId!));
+      if (coachTeams.size !== 1) continue;
+      const coachTeamId = [...coachTeams][0];
+      if (!simTeams.some(team => team.id === coachTeamId)) continue;
+      const owed = simPlayers.filter(player => (player.isCoachKid && player.coachTeamId === coachTeamId)
+        || player.lockedToTeamId === coachTeamId);
+      if (new Set([...group, ...owed].map(player => player.id)).size <= totalRounds) {
+        for (const player of group) {
+          if ((!player.isCoachKid || !player.coachTeamId) && (!player.lockedToTeamId || player.lockedToTeamId === coachTeamId)) {
+            player.lockedToTeamId = coachTeamId;
+          }
+        }
+      }
+    }
+  }
   let overallPick = 0;
 
   // Track picks made by each team
   const teamPicksMade: Record<string, number> = {};
   simTeams.forEach(t => { teamPicksMade[t.id] = 0; });
   const remainingPicks = Object.fromEntries(simTeams.map(team => [team.id, totalRounds]));
+  if (options.includeSiblings) releaseExhaustedSiblingLocks(simPlayers, remainingPicks, options.includeCoachKids);
   const siblingGroups = getSiblingGroups(simPlayers);
   const rankedPlayers = [...simPlayers].sort((a, b) => b.totalScore - a.totalScore);
 
@@ -85,12 +105,14 @@ export function runSimulation(
           let owed: Player[] | undefined;
           const fits = (candidate: Player) => {
             const group = siblingGroups.get(candidate.id)!;
-            const undrafted = group.filter(player => !player.isDrafted);
+            const canBelongToTeam = (player: Player) => !player.isDrafted
+              && !(options.includeCoachKids && player.isCoachKid && player.coachTeamId && player.coachTeamId !== teamId);
+            const undrafted = group.filter(canBelongToTeam);
             if (undrafted.length <= 1) return true;
             owed ??= simPlayers.filter(player => !player.isDrafted && (
               (options.includeCoachKids && player.isCoachKid && player.coachTeamId === teamId)
               || player.lockedToTeamId === teamId
-            )).flatMap(player => siblingGroups.get(player.id)!.filter(sibling => !sibling.isDrafted));
+            )).flatMap(player => siblingGroups.get(player.id)!.filter(canBelongToTeam));
             return new Set([...undrafted, ...owed].map(player => player.id)).size <= remainingPicks[teamId];
           };
           if (!fits(playerToDraft)) {
@@ -124,8 +146,8 @@ export function runSimulation(
 
         // Lock siblings to this team (same as real draft)
         if (options.includeSiblings) {
-          lockSiblingToTeam(simPlayers, playerToDraft, team.id);
-          releaseExhaustedSiblingLocks(simPlayers, remainingPicks);
+          lockSiblingToTeam(simPlayers, playerToDraft, team.id, options.includeCoachKids);
+          releaseExhaustedSiblingLocks(simPlayers, remainingPicks, options.includeCoachKids);
         }
       }
     }

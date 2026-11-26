@@ -1297,6 +1297,7 @@ class DraftSafetyTests(CrossTenantTestBase):
     def test_excess_sibling_lock_releases_before_original_team_final_pick(self):
         for index in range(3):
             self.players[index].sibling_id = self.players[(index + 1) % 3].id
+            self.players[index].rank = index + 1
             self.players[index].save()
         self.state = DraftService.start_draft(self.division.id, "straight", [t.id for t in self.victim_teams])
         self.state = DraftService.draft_player(self.state.id, self.players[0].id, self.victim_teams[0].id, acknowledge_warnings=True)
@@ -1346,17 +1347,20 @@ class DraftSafetyTests(CrossTenantTestBase):
         self.assertEqual(self.state.mandatory_player_id, self.players[3].id)
 
     def test_undo_skip_restores_released_locks(self):
-        self.reach_last_sibling()
-        self.players[3].is_coach_kid = True
-        self.players[3].coach_team = self.victim_teams[0]
-        self.players[3].locked_to_team = self.victim_teams[1]
-        self.players[3].save()
-        self.state = DraftService.skip_pick(self.state.id, self.victim_teams[1].id)
-        self.players[3].refresh_from_db()
-        self.assertIsNone(self.players[3].locked_to_team_id)
-        self.state = DraftService.undo_last_pick(self.state.id, expected_pick=4)
-        self.players[3].refresh_from_db()
-        self.assertEqual(self.players[3].locked_to_team_id, self.victim_teams[1].id)
+        self.players[3].delete()
+        for index in range(2):
+            self.players[index].locked_to_team = self.victim_teams[0]
+            self.players[index].rank = index + 1
+            self.players[index].save()
+        self.state = DraftService.skip_pick(self.state.id, self.victim_teams[0].id)
+        pick = self.state.picks.first()
+        self.assertEqual(pick.released_sibling_locks, {str(self.players[1].id): str(self.victim_teams[0].id)})
+        self.players[1].refresh_from_db()
+        self.assertIsNone(self.players[1].locked_to_team_id)
+        self.state = DraftService.undo_last_pick(self.state.id, expected_pick=1)
+        for index in range(2):
+            self.players[index].refresh_from_db()
+            self.assertEqual(self.players[index].locked_to_team_id, self.victim_teams[0].id)
 
     def test_undo_does_not_restore_a_lock_created_and_released_in_the_same_pick(self):
         self.reach_last_sibling()
@@ -1388,8 +1392,7 @@ class DraftSafetyTests(CrossTenantTestBase):
             DraftService.skip_pick(self.state.id, self.state.current_team_id)
 
     def test_impossible_mandatory_pick_can_be_skipped(self):
-        self.players[0].is_coach_kid = True
-        self.players[0].coach_team = self.victim_teams[1]
+        self.players[0].locked_to_team = self.victim_teams[1]
         self.players[0].save()
         self.state.mandatory_player = self.players[0]
         self.state.mandatory_reason = "sibling"
@@ -1398,6 +1401,21 @@ class DraftSafetyTests(CrossTenantTestBase):
         self.assertTrue(self.state.picks.first().was_skipped)
         self.players[0].refresh_from_db()
         self.assertFalse(self.players[0].is_drafted)
+        self.assertEqual(self.players[0].locked_to_team_id, self.victim_teams[1].id)
+
+    def test_foreign_coach_mandatory_repair_does_not_allow_skipping_available_players(self):
+        self.players[0].is_coach_kid = True
+        self.players[0].coach_team = self.victim_teams[1]
+        self.players[0].save()
+        self.state.mandatory_player = self.players[0]
+        self.state.mandatory_reason = "sibling"
+        self.state.save()
+        with self.assertRaisesMessage(ValueError, "all remaining players must be drafted"):
+            DraftService.skip_pick(self.state.id, self.state.current_team_id)
+        self.pick(1)
+        self.players[0].refresh_from_db()
+        self.assertFalse(self.players[0].is_drafted)
+        self.assertEqual(self.players[0].coach_team_id, self.victim_teams[1].id)
 
     def test_undo_round_order_and_audit(self):
         from .transformers import transform_draft_state

@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { DraftState, Team, DivisionAgeRange, Player, PickWarning, DraftPick } from '../types';
 import { getPickWarnings } from '../utils/draftSafety';
-import { canSkipDraftPick, getBestAvailable, getDraftSiblingState } from '../utils/draftLogic';
+import { clearForeignCoachMandatoryPick, canSkipDraftPick, getBestAvailable, getDraftSiblingState } from '../utils/draftLogic';
 import { getNextPick, calculateDraftOrder } from '../utils/draftOrder';
 import { useViewMode } from '../contexts/ViewContext';
 import { VoiceCopilot } from './draft/VoiceCopilot';
@@ -78,7 +78,7 @@ export const DraftBoard = ({
     savedDraftState,
     rosterSize ?? Math.ceil(savedDraftState.players.length / savedDraftState.teams.length),
   ), [savedDraftState, rosterSize]);
-  const draftState = { ...savedDraftState, players: siblingState.players };
+  const draftState = clearForeignCoachMandatoryPick({ ...savedDraftState, players: siblingState.players });
   const viewMode = useViewMode();
   const isPublicView = viewMode === 'public';
   const controls = isPublicView ? undefined : draftControls;
@@ -131,6 +131,7 @@ export const DraftBoard = ({
       enforceAgeLimit, maxPerAge, ageRange: ageRange ?? { min: 0, max: 99 },
       rosterSize: rosterSize ?? Math.ceil(draftState.players.length / draftState.teams.length),
       teamCount: draftState.teams.length,
+      teams: draftState.teams,
     }, draftState.mandatoryPick?.playerId);
   });
   const activeRuleDialog = pendingRuleWarnings ?? ruleDialog;

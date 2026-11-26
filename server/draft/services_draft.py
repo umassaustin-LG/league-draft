@@ -92,6 +92,7 @@ class DraftService:
 
         # Check for mandatory pick
         previously_locked = cls._sibling_locks(draft_state)
+        cls._repair_foreign_coach_mandatory_pick(draft_state)
         cls._release_exhausted_sibling_locks(draft_state)
         if (
             draft_state.mandatory_player_id
@@ -107,6 +108,8 @@ class DraftService:
             raise ValueError("Player not found in this division")
         if player.is_drafted:
             raise ValueError("Player is already drafted")
+        if player.is_coach_kid and player.coach_team_id and str(player.coach_team_id) != str(team_id):
+            raise ValueError("Coach's kid must be drafted by their coach's team")
 
         try:
             team = Team.objects.get(id=team_id, division=division)
@@ -180,6 +183,7 @@ class DraftService:
         # Cannot skip if remaining players >= remaining draft spots
         # (all players must be drafted)
         previously_locked = cls._sibling_locks(draft_state)
+        cls._repair_foreign_coach_mandatory_pick(draft_state)
         cls._release_exhausted_sibling_locks(draft_state)
         available = list(division.players.filter(is_drafted=False))
         has_eligible_player = any(
@@ -487,6 +491,18 @@ class DraftService:
         return total_rounds - picks_made
 
     @classmethod
+    def _repair_foreign_coach_mandatory_pick(cls, draft_state: DraftState) -> None:
+        player = draft_state.mandatory_player
+        if not (player and player.is_coach_kid and player.coach_team_id
+                and player.coach_team_id != draft_state.current_team_id):
+            return
+        draft_state.mandatory_player = None
+        draft_state.mandatory_reason = ""
+        draft_state.mandatory_sibling_name = ""
+        draft_state.save(update_fields=["mandatory_player", "mandatory_reason", "mandatory_sibling_name"])
+        cls._check_and_set_mandatory_pick(draft_state, draft_state.current_team, draft_state.current_round)
+
+    @classmethod
     def _check_and_set_mandatory_pick(
         cls, draft_state: DraftState, team: Team, current_round: int
     ) -> None:
@@ -497,9 +513,13 @@ class DraftService:
         2. If not, check if we need to force a mandatory pick early because there aren't
            enough remaining picks to draft all required players at their projected rounds
         """
-        from django.db.models import Q
+        from django.db.models import F, Q
 
         division = draft_state.division
+
+        division.players.filter(is_drafted=False, is_coach_kid=True, coach_team__isnull=False,
+                                locked_to_team__isnull=False).exclude(locked_to_team_id=F("coach_team_id")).update(locked_to_team=None)
+        cls._release_exhausted_sibling_locks(draft_state)
 
         # Get all undrafted mandatory players for this team (coach's kids + locked siblings)
         coach_kids = list(Player.objects.filter(
@@ -513,8 +533,7 @@ class DraftService:
             locked_to_team=team,
             is_drafted=False,
         ).exclude(
-            # Exclude coach's kids that are already in coach_kids list
-            coach_team=team
+            is_coach_kid=True, coach_team__isnull=False
         ).order_by('projected_round', 'locked_to_round'))
 
         all_mandatory = coach_kids + locked_siblings
@@ -529,7 +548,7 @@ class DraftService:
             division=division,
             locked_to_team=team,
             is_drafted=False,
-        ).first()
+        ).exclude(is_coach_kid=True, coach_team__isnull=False).first()
 
         if locked_sibling:
             draft_state.mandatory_player = locked_sibling
@@ -595,14 +614,21 @@ class DraftService:
 
     @classmethod
     def _release_exhausted_sibling_locks(cls, draft_state: DraftState) -> None:
-        from django.db.models import Count
+        from django.db.models import Count, F
 
+        draft_state.division.players.filter(is_drafted=False, is_coach_kid=True, coach_team__isnull=False,
+                                           locked_to_team__isnull=False).exclude(locked_to_team_id=F("coach_team_id")).update(locked_to_team=None)
         picks = {row["team_id"]: row["count"] for row in draft_state.picks.values("team_id").annotate(count=Count("id"))}
+        coach_kids = {row["coach_team_id"]: row["count"] for row in draft_state.division.players.filter(
+            is_drafted=False, is_coach_kid=True, coach_team__isnull=False
+        ).values("coach_team_id").annotate(count=Count("id"))}
         by_team = {}
-        for player in draft_state.division.players.filter(is_drafted=False, locked_to_team__isnull=False).order_by("rank", "id"):
+        for player in draft_state.division.players.filter(is_drafted=False, locked_to_team__isnull=False).exclude(
+            is_coach_kid=True, coach_team__isnull=False
+        ).order_by("rank", "id"):
             by_team.setdefault(player.locked_to_team_id, []).append(player.id)
         for team_id, player_ids in by_team.items():
-            remaining = max(0, draft_state.division.roster_size - picks.get(team_id, 0))
+            remaining = max(0, draft_state.division.roster_size - picks.get(team_id, 0) - coach_kids.get(team_id, 0))
             draft_state.division.players.filter(id__in=player_ids[remaining:]).update(locked_to_team=None)
 
     @classmethod
@@ -627,7 +653,10 @@ class DraftService:
                     id=current.sibling_id, division=division, is_drafted=False
                 ).first()
                 if sibling:
-                    if not sibling.locked_to_team_id or sibling.locked_to_team_id == team.id:
+                    if sibling.is_coach_kid and sibling.coach_team_id and sibling.coach_team_id != team.id:
+                        sibling.locked_to_team = None
+                        sibling.save()
+                    elif not sibling.locked_to_team_id or sibling.locked_to_team_id == team.id:
                         sibling.locked_to_team = team
                         sibling.save()
                     processed_ids.add(sibling.id)
@@ -639,7 +668,10 @@ class DraftService:
             ).exclude(id__in=processed_ids)
 
             for sibling in reverse_siblings:
-                if not sibling.locked_to_team_id or sibling.locked_to_team_id == team.id:
+                if sibling.is_coach_kid and sibling.coach_team_id and sibling.coach_team_id != team.id:
+                    sibling.locked_to_team = None
+                    sibling.save()
+                elif not sibling.locked_to_team_id or sibling.locked_to_team_id == team.id:
                     sibling.locked_to_team = team
                     sibling.save()
                 processed_ids.add(sibling.id)
