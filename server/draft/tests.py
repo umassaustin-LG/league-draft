@@ -935,6 +935,18 @@ class CrossTenantTestBase(TestCase):
         ]
 
 
+class CompletedDivisionSummaryTests(CrossTenantTestBase):
+    def test_finished_draft_is_not_listed_as_in_progress_even_with_legacy_phase(self):
+        self.victim_division.phase = "draft"
+        self.victim_division.save()
+        state = DraftState.objects.create(division=self.victim_division, draft_format="straight")
+        self.client.force_login(self.victim_admin)
+        self.assertEqual(self.client.get("/api/divisions/").json()[0]["phase"], "draft")
+        state.is_draft_complete = True
+        state.save()
+        self.assertEqual(self.client.get("/api/divisions/").json()[0]["phase"], "complete")
+
+
 class TeamBuilderAccessTests(CrossTenantTestBase):
     def _post(self, user, action, body):
         self.client.force_login(user)

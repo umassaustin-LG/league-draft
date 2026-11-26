@@ -31,6 +31,7 @@ interface DraftControls {
 }
 
 interface DraftBoardProps {
+  onBackToDivisions?: () => void;
   draftState: DraftState;
   controls?: DraftControls;
   rosterSize?: number;
@@ -73,6 +74,7 @@ export const DraftBoard = ({
   mandatoryPickError,
   onClearMandatoryPickError,
   voiceCopilotDivisionId,
+  onBackToDivisions,
 }: DraftBoardProps) => {
   const siblingState = useMemo(() => getDraftSiblingState(
     savedDraftState,
@@ -421,6 +423,11 @@ export const DraftBoard = ({
       )}
 
       <div className="max-w-7xl mx-auto">
+        {draftState.isDraftComplete && onBackToDivisions && (
+          <button onClick={onBackToDivisions} className="mb-4 rounded-button border border-rule px-4 py-2 text-ink hover:border-rule-strong">
+            Back to Divisions
+          </button>
+        )}
         {siblingState.released.length > 0 && (
           <div role="status" className="mb-4 border border-rule bg-surface p-4 text-ink">
             Sibling rule could not be honored for {siblingState.released.map(player => player.name).join(', ')}:

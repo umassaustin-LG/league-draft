@@ -5,6 +5,7 @@ import { DraftBoard } from '../components/DraftBoard';
 import { DraftState, Player, Team } from '../types';
 import { canSkipDraftPick, getBestAvailable, getDraftSiblingState, getMandatoryPick, lockSiblingToTeam, releaseExhaustedSiblingLocks } from './draftLogic';
 import { runSimulation } from './simulation';
+import { getPersistedDraftPhase } from './divisionAccess';
 
 const player = (id: string, overrides: Partial<Player> = {}): Player => ({
   id, bib: id, name: id, firstName: id, lastName: '',
@@ -41,10 +42,21 @@ const controls = {
   pendingComplete: false, onFinalizeDraft: vi.fn(), onCancelComplete: vi.fn(),
 };
 const renderBoard = (state: DraftState, rosterSize = 2) => renderToStaticMarkup(
-  createElement(DraftBoard, { draftState: state, controls, rosterSize, enforceAgeLimit: false, maxPerAge: 0 }),
+  createElement(DraftBoard, { draftState: state, controls, rosterSize, enforceAgeLimit: false, maxPerAge: 0, onBackToDivisions: vi.fn() }),
 );
 
 describe('live last-slot sibling recovery', () => {
+  it('offers non-destructive navigation on a completed board and preserves completion when viewing it', () => {
+    const state = finalPickState();
+    expect(renderBoard(state)).not.toContain('Back to Divisions');
+    state.isDraftComplete = true;
+    expect(renderBoard(state)).toContain('Back to Divisions');
+    expect(getPersistedDraftPhase('draft', true)).toBe('complete');
+    expect(getPersistedDraftPhase('draft', false)).toBe('draft');
+    expect(getPersistedDraftPhase('review', false)).toBe('review');
+    expect(state.picks).toHaveLength(3);
+  });
+
   it('does not transfer a retained sibling lock after another team drafts the released sibling', () => {
     const players = [
       player('root', { siblingId: 'kept', isDrafted: true, draftedByTeamId: 'a' }),

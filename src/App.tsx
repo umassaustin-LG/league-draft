@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useDivisions } from './hooks/useDivisions';
+import { getPersistedDraftPhase } from './utils/divisionAccess';
 import { useDraft } from './hooks/useDraft';
 import { usePlayerScoring } from './hooks/usePlayerScoring';
 import { useViewMode } from './contexts/ViewContext';
@@ -226,14 +227,15 @@ function App() {
     // Only sync phase changes AFTER the division state has been loaded
     // This prevents the default 'upload' phase from overwriting the API-loaded phase
     // Also prevent concurrent updates (Issue #6)
-    if (canEditDivision && divisionStateLoaded && activeDivision && phase !== activeDivision.phase && !isUpdatingPhase.current) {
+    const persistedPhase = getPersistedDraftPhase(phase, draftState.isDraftComplete);
+    if (canEditDivision && divisionStateLoaded && activeDivision && persistedPhase !== activeDivision.phase && !isUpdatingPhase.current) {
       isUpdatingPhase.current = true;
       // When draft completes, save the completion timestamp and final state
       // Note: Don't pass players here - they're already saved by draft pick API
       // Trying to re-save would trigger delete/recreate which is blocked during draft/complete
-      if (phase === 'complete') {
+      if (persistedPhase === 'complete') {
         updateActiveDivision({
-          phase,
+          phase: persistedPhase,
           completedAt: new Date().toISOString(),
           draftState,
           teams: draftState.teams,
@@ -248,7 +250,7 @@ function App() {
           isUpdatingPhase.current = false;
         });
       } else {
-        updateActiveDivision({ phase }).then(() => {
+        updateActiveDivision({ phase: persistedPhase }).then(() => {
           setSaveError(null);
         }).catch((err) => {
           console.error('Failed to save phase change:', err);
@@ -259,7 +261,7 @@ function App() {
         });
       }
     }
-  }, [phase, activeDivision?.id, canEditDivision, divisionStateLoaded]);
+  }, [phase, draftState.isDraftComplete, activeDivision?.id, canEditDivision, divisionStateLoaded]);
 
   // Browser history management - handle back/forward navigation
   // Strategy: Push a state entry on load, and when user presses back,
@@ -656,7 +658,7 @@ function App() {
         players: draftState.players.length > 0 ? draftState.players : activeDivision.players,
         teams: draftState.teams.length > 0 ? draftState.teams : activeDivision.teams,
         draftState: draftState.picks.length > 0 ? draftState : activeDivision.draftState,
-        phase,
+        phase: getPersistedDraftPhase(phase, draftState.isDraftComplete),
       });
     }
     clearActiveDivision();
@@ -1170,6 +1172,7 @@ function App() {
 
         {phase === 'draft' && (draftState.currentTeamId || pendingComplete || draftState.isDraftComplete) && (
           <DraftBoard
+            onBackToDivisions={handleBackToSelector}
             draftState={draftState}
             controls={{
               onDraftPlayer: draftPlayer,
