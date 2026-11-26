@@ -117,11 +117,6 @@ function App() {
     : undefined;
   const canCreateDivision = !isPublicView && (activeOrganizationId ? !!leagueAdminMembership : canUsePersonalWorkspace(user));
 
-  useEffect(() => {
-    clearActiveDivision();
-    setMode('selector');
-  }, [activeOrganizationId, clearActiveDivision]);
-
   const {
     phase,
     setPhase,
@@ -859,7 +854,10 @@ function App() {
     return (
       <DivisionSelector
         activeOrganizationId={activeOrganizationId}
-        onSwitchOrganization={switchOrganization}
+        onSwitchOrganization={organizationId => {
+          clearActiveDivision();
+          switchOrganization(organizationId);
+        }}
         divisions={summaries}
         onSelectDivision={handleSelectDivision}
         onCreateNew={canCreateDivision ? () => setMode('creator') : undefined}

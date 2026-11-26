@@ -8,7 +8,7 @@ import {
 } from '../types';
 import { api, ApiError } from '../api/client';
 import { saveTeamsToApi, savePlayersToApi } from '../api';
-import { divisionNameExistsInWorkspace, hasGeneratedRosters, isDivisionInWorkspace } from '../utils/divisionAccess';
+import { divisionNameExistsInWorkspace, hasGeneratedRosters } from '../utils/divisionAccess';
 
 // Validation: A division is complete enough to persist when it has players
 export function isDivisionValid(division: Division | null): boolean {
@@ -34,14 +34,17 @@ export function useDivisions(userId?: string, organizationId?: string | null) {
   const [, setDivisionIds] = useState<string[]>([]);
   const [loadedSummaries, setSummaries] = useState<DivisionSummary[]>([]);
   const [selectedDivision, setActiveDivision] = useState<Division | null>(null);
-  const summaries = loadedSummaries.filter(division => isDivisionInWorkspace(division, organizationId));
-  const activeDivision = selectedDivision && isDivisionInWorkspace(selectedDivision, organizationId) ? selectedDivision : null;
+  const [loadedWorkspace, setLoadedWorkspace] = useState({ userId, organizationId });
+  const isCurrentWorkspace = loadedWorkspace.userId === userId && loadedWorkspace.organizationId === organizationId;
+  const summaries = isCurrentWorkspace ? loadedSummaries : [];
+  const activeDivision = isCurrentWorkspace ? selectedDivision : null;
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Fetch only with an authenticated session and discard the previous account's data.
   useEffect(() => {
     let cancelled = false;
+    setLoadedWorkspace({ userId, organizationId });
     setActiveDivision(null);
     setSummaries([]);
     setDivisionIds([]);

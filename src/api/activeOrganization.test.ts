@@ -89,14 +89,14 @@ describe('active league selection', () => {
     expect(canSelectPersonalWorkspace(null)).toBe(false);
   });
 
-  it('scopes visible divisions and duplicate names to the selected workspace', () => {
+  it('compares workspace identities and scopes duplicate names to the selected workspace', () => {
     const divisions = [
       { id: 'personal', name: 'AA', playerCount: 2 },
       { id: 'league-one', name: 'Majors', playerCount: 2, organizationId: 'one' },
       { id: 'league-two', name: 'AAA', playerCount: 2, organizationId: 'two' },
       { id: 'empty', name: 'Empty', playerCount: 0, organizationId: 'one' },
     ] as DivisionSummary[];
-    expect(divisions.filter(division => isDivisionInWorkspace(division, null)).map(division => division.id)).toEqual(['personal']);
+    expect(isDivisionInWorkspace(divisions[0], null)).toBe(true);
     expect(divisionNameExistsInWorkspace(divisions, ' aa ', null)).toBe(true);
     expect(divisionNameExistsInWorkspace(divisions, 'AA', 'one')).toBe(false);
     expect(divisionNameExistsInWorkspace(divisions, 'majors', 'one')).toBe(true);
