@@ -821,6 +821,15 @@ export const DraftBoard = ({
               All <span className="font-mono tabular-nums text-ink">{draftState.picks.length}</span> picks
               have been recorded. Finalize to lock in rosters and unlock exports.
             </p>
+            <p className="mt-3 text-sm text-ink-muted">
+              {draftState.players.length - availablePlayers.length}/{draftState.players.length} players have been drafted.
+            </p>
+            {availablePlayers.length > 0 && (
+              <div role="alert" className="mt-3 border border-rule p-3 text-ink">
+                <p className="font-semibold">Undrafted players ({availablePlayers.length})</p>
+                <ul>{availablePlayers.map(player => <li key={player.id}>{player.name}</li>)}</ul>
+              </div>
+            )}
           </div>
 
           <div className="px-6 py-4 border-t border-rule flex justify-end gap-2">

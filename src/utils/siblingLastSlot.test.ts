@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { DraftBoard } from '../components/DraftBoard';
+import { DraftComplete } from '../components/DraftComplete';
 import { DraftState, Player, Team } from '../types';
 import { canSkipDraftPick, getBestAvailable, getDraftSiblingState, getMandatoryPick, lockSiblingToTeam, releaseExhaustedSiblingLocks } from './draftLogic';
 import { runSimulation } from './simulation';
@@ -45,6 +46,32 @@ const renderBoard = (state: DraftState, rosterSize = 2) => renderToStaticMarkup(
 );
 
 describe('live last-slot sibling recovery', () => {
+  it.each(['skipped', 'all-drafted', 'empty'])('shows actual drafted counts and undrafted names on completion: %s', scenario => {
+    const state = finalPickState();
+    state.isDraftComplete = true;
+    state.currentTeamId = null;
+    state.picks.push({ round: 2, pick: 4, teamId: 'b', playerId: 'SKIPPED' });
+    if (scenario === 'all-drafted') state.players = state.players.map(p => ({ ...p, isDrafted: true }));
+    if (scenario === 'empty') state.players = [];
+    const expected = scenario === 'skipped' ? '3/4' : scenario === 'all-drafted' ? '4/4' : '0/0';
+    const surfaces = [
+      createElement(DraftComplete, { draftState: state, onReset: vi.fn() }),
+      createElement(DraftBoard, { draftState: state, controls: { ...controls, pendingComplete: true },
+        rosterSize: 2, enforceAgeLimit: false, maxPerAge: 0 }),
+    ];
+    for (const surface of surfaces) {
+      const markup = renderToStaticMarkup(surface).replace(/<!--.*?-->/g, '');
+      expect(markup).toContain(`${expected} players have been drafted`);
+      expect(markup).not.toContain('All 4 players have been drafted');
+      if (scenario === 'skipped') {
+        expect(markup).toContain('Undrafted players (1)');
+        expect(markup).toContain('<li>last-sibling</li>');
+      } else {
+        expect(markup).not.toContain('Undrafted players');
+      }
+    }
+  });
+
   it('does not transfer a retained sibling lock after another team drafts the released sibling', () => {
     const players = [
       player('root', { siblingId: 'kept', isDrafted: true, draftedByTeamId: 'a' }),

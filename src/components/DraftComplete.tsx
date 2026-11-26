@@ -32,6 +32,7 @@ interface DraftCompleteProps {
 }
 
 export const DraftComplete = ({ draftState, division, onReset, onExecuteTrade, onUpdateTeam, onReturnToDraftBoard }: DraftCompleteProps) => {
+  const undraftedPlayers = draftState.players.filter(player => !player.isDrafted);
   const [copiedRosters, setCopiedRosters] = useState(false);
   const [copiedRecord, setCopiedRecord] = useState(false);
   const [showTradeModal, setShowTradeModal] = useState(false);
@@ -168,8 +169,14 @@ export const DraftComplete = ({ draftState, division, onReset, onExecuteTrade, o
           <div className="text-center">
             <h1 className="text-3xl sm:text-4xl font-bold mb-2">Draft Complete!</h1>
             <p className="text-lg opacity-90">
-              All {draftState.players.length} players have been drafted
+              {draftState.players.length - undraftedPlayers.length}/{draftState.players.length} players have been drafted
             </p>
+            {undraftedPlayers.length > 0 && (
+              <div role="alert" className="mt-4 rounded-lg bg-white/10 p-4 text-left">
+                <p className="font-semibold">Undrafted players ({undraftedPlayers.length})</p>
+                <ul>{undraftedPlayers.map(player => <li key={player.id}>{player.name}</li>)}</ul>
+              </div>
+            )}
           </div>
 
           <div className="flex justify-center gap-3 mt-6 flex-wrap">
