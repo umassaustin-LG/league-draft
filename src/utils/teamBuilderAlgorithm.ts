@@ -223,6 +223,69 @@ export function fillMinimumRosters(
 // Main Algorithm
 // -----------------------------------------------------------------------------
 
+function placeSiblingGroups(
+  players: TeamBuilderPlayer[],
+  teams: TeamBuilderTeam[],
+  unassigned: Set<string>,
+  assign: (playerId: string, teamId: string, reason: AssignmentReason) => unknown,
+  capacity: (team: TeamBuilderTeam) => number,
+  warnings: string[]
+): Set<string> {
+  const byId = new Map(players.map(player => [player.id, player]));
+  const neighbors = new Map(players.map(player => [player.id, new Set<string>()]));
+  for (const player of players) {
+    if (player.siblingId && byId.has(player.siblingId)) {
+      neighbors.get(player.id)!.add(player.siblingId);
+      neighbors.get(player.siblingId)!.add(player.id);
+    }
+  }
+  const visited = new Set<string>();
+  const blocked = new Set<string>();
+  const groups: { members: TeamBuilderPlayer[]; anchors: Set<string> }[] = [];
+  for (const player of [...players].sort((a, b) => b.totalScore - a.totalScore)) {
+    if (visited.has(player.id)) continue;
+    const group: TeamBuilderPlayer[] = [];
+    const pending = [player.id];
+    visited.add(player.id);
+    while (pending.length) {
+      const id = pending.pop()!;
+      group.push(byId.get(id)!);
+      for (const neighbor of neighbors.get(id)!) {
+        if (!visited.has(neighbor)) {
+          visited.add(neighbor);
+          pending.push(neighbor);
+        }
+      }
+    }
+    if (group.length < 2) continue;
+    const anchors = new Set<string>();
+    for (const member of group) {
+      const assignedTeam = teams.find(team => team.assignedPlayerIds.includes(member.id));
+      if (assignedTeam) anchors.add(assignedTeam.id);
+      if (member.isCoachKid && member.coachTeamId) anchors.add(member.coachTeamId);
+      if (member.lockedToTeamId) anchors.add(member.lockedToTeamId);
+    }
+    groups.push({ members: group, anchors });
+  }
+  groups.sort((a, b) => Number(b.anchors.size > 0) - Number(a.anchors.size > 0)
+    || b.members.length - a.members.length
+    || Math.max(...b.members.map(member => member.totalScore)) - Math.max(...a.members.map(member => member.totalScore)));
+  for (const { members: group, anchors } of groups) {
+    const remaining = group.filter(member => unassigned.has(member.id));
+    const team = anchors.size > 1 ? undefined : [...teams]
+      .filter(team => (!anchors.size || anchors.has(team.id))
+        && team.assignedPlayerIds.length + remaining.length <= capacity(team))
+      .sort((a, b) => a.currentScore - b.currentScore)[0];
+    if (!team) {
+      warnings.push(`Sibling group ${group.map(member => member.name).join(', ')} could not be placed together within roster limits and locked assignments. Existing placements are unchanged; remaining siblings are unassigned.`);
+      remaining.forEach(member => blocked.add(member.id));
+      continue;
+    }
+    for (const member of remaining) assign(member.id, team.id, 'sibling-lock');
+  }
+  return blocked;
+}
+
 /**
  * Run the team builder auto-assignment algorithm.
  */
@@ -388,39 +451,6 @@ export function runTeamBuilderAlgorithm(
     }
   }
 
-  // 0b: Siblings - place with their locked sibling
-  const siblingGroups = new Map<string, string[]>();
-  for (const player of players) {
-    if (player.siblingId) {
-      const groupKey = [player.id, player.siblingId].sort().join('-');
-      if (!siblingGroups.has(groupKey)) {
-        siblingGroups.set(groupKey, []);
-      }
-      siblingGroups.get(groupKey)!.push(player.id);
-    }
-  }
-
-  for (const [, siblingIds] of siblingGroups) {
-    // Find if any sibling is already assigned
-    const assignedSibling = siblingIds.find(id => !unassignedPlayers.has(id));
-    if (assignedSibling) {
-      const assignment = assignments.find(a => a.playerId === assignedSibling);
-      if (assignment) {
-        // Assign remaining siblings to same team
-        for (const sibId of siblingIds) {
-          if (unassignedPlayers.has(sibId)) {
-            const team = workingTeams.find(t => t.id === assignment.teamId);
-            if (team && canAcceptPlayer(team)) {
-              assignPlayer(sibId, assignment.teamId, 'sibling-lock');
-            } else {
-              warnings.push(`Sibling ${sibId} could not be placed with sibling on team ${assignment.teamId}`);
-            }
-          }
-        }
-      }
-    }
-  }
-
   // 0c: Manually locked players (lockedToTeamId)
   for (const player of players) {
     if (!unassignedPlayers.has(player.id)) continue;
@@ -434,13 +464,20 @@ export function runTeamBuilderAlgorithm(
     }
   }
 
+  const blockedSiblingIds = placeSiblingGroups(players, workingTeams, unassignedPlayers, assignPlayer, team => {
+    if (!config.forceEvenTeams) return config.maxRosterSize;
+    const teamsWithExtra = workingTeams.filter(t => t.assignedPlayerIds.length > baseRosterSize).length;
+    const canHaveExtra = team.assignedPlayerIds.length > baseRosterSize || teamsWithExtra < extraPlayers;
+    return Math.min(config.maxRosterSize, baseRosterSize + Number(canHaveExtra));
+  }, warnings);
+
   // =========================================================================
   // PHASE 1: Top talent distribution
   // =========================================================================
 
   const topTalentCount = config.topTalentRounds * teams.length;
   const sortedByScore = [...players]
-    .filter(p => unassignedPlayers.has(p.id))
+    .filter(p => unassignedPlayers.has(p.id) && !blockedSiblingIds.has(p.id))
     .sort((a, b) => b.totalScore - a.totalScore);
 
   const topTalent = sortedByScore.slice(0, topTalentCount);
@@ -461,7 +498,7 @@ export function runTeamBuilderAlgorithm(
   // =========================================================================
 
   const remainingByScore = [...players]
-    .filter(p => unassignedPlayers.has(p.id))
+    .filter(p => unassignedPlayers.has(p.id) && !blockedSiblingIds.has(p.id))
     .sort((a, b) => b.totalScore - a.totalScore);
 
   for (const player of remainingByScore) {
@@ -566,6 +603,7 @@ export function runTeamBuilderAlgorithm(
   // =========================================================================
 
   for (const playerId of unassignedPlayers) {
+    if (blockedSiblingIds.has(playerId)) continue;
     const player = playerMap.get(playerId);
     if (!player) continue;
 
@@ -884,22 +922,18 @@ export function runRequestsFirstAlgorithm(
   const totalPlayers = players.length;
   const baseRosterSize = Math.floor(totalPlayers / numTeams);
   const extraPlayers = totalPlayers % numTeams;
-  // Some teams get baseRosterSize + 1, others get baseRosterSize
-  // Teams are filled in order, so first `extraPlayers` teams get the extra player
-
-  // Helper to get max size for a team when forceEvenTeams is enabled
-  const getMaxSizeForTeam = (teamIndex: number): number => {
+  const getMaxSizeForTeam = (team: TeamBuilderTeam): number => {
     if (!fullConfig.forceEvenTeams) {
       return fullConfig.maxRosterSize;
     }
-    // First `extraPlayers` teams get one extra player
-    return teamIndex < extraPlayers ? baseRosterSize + 1 : baseRosterSize;
+    const teamsWithExtra = workingTeams.filter(t => t.assignedPlayerIds.length > baseRosterSize).length;
+    const canHaveExtra = team.assignedPlayerIds.length > baseRosterSize || teamsWithExtra < extraPlayers;
+    return Math.min(fullConfig.maxRosterSize, baseRosterSize + Number(canHaveExtra));
   };
 
   // Helper to check if team can accept more players
   const canAcceptPlayer = (team: TeamBuilderTeam): boolean => {
-    const teamIndex = workingTeams.indexOf(team);
-    const maxSize = getMaxSizeForTeam(teamIndex);
+    const maxSize = getMaxSizeForTeam(team);
     return team.assignedPlayerIds.length < maxSize;
   };
 
@@ -946,35 +980,6 @@ export function runRequestsFirstAlgorithm(
     }
   }
 
-  // 0b: Siblings - place with their locked sibling
-  const siblingGroups = new Map<string, string[]>();
-  for (const player of players) {
-    if (player.siblingId) {
-      const groupKey = [player.id, player.siblingId].sort().join('-');
-      if (!siblingGroups.has(groupKey)) {
-        siblingGroups.set(groupKey, []);
-      }
-      siblingGroups.get(groupKey)!.push(player.id);
-    }
-  }
-
-  for (const [, siblingIds] of siblingGroups) {
-    const assignedSibling = siblingIds.find(id => !unassignedPlayers.has(id));
-    if (assignedSibling) {
-      const assignment = assignments.find(a => a.playerId === assignedSibling);
-      if (assignment) {
-        for (const sibId of siblingIds) {
-          if (unassignedPlayers.has(sibId)) {
-            const team = workingTeams.find(t => t.id === assignment.teamId);
-            if (team && canAcceptPlayer(team)) {
-              assignPlayer(sibId, assignment.teamId, 'sibling-lock');
-            }
-          }
-        }
-      }
-    }
-  }
-
   // 0c: Manually locked players
   for (const player of players) {
     if (!unassignedPlayers.has(player.id)) continue;
@@ -986,6 +991,9 @@ export function runRequestsFirstAlgorithm(
       }
     }
   }
+
+  const blockedSiblingIds = placeSiblingGroups(players, workingTeams, unassignedPlayers, assignPlayer,
+    getMaxSizeForTeam, warnings);
 
   // =========================================================================
   // PHASE 1: Build and place two-way request clusters
@@ -1020,7 +1028,7 @@ export function runRequestsFirstAlgorithm(
   // Place each cluster
   for (const cluster of clusters) {
     // Skip if all players already assigned
-    const unassignedInCluster = cluster.playerIds.filter(id => unassignedPlayers.has(id));
+    const unassignedInCluster = cluster.playerIds.filter(id => unassignedPlayers.has(id) && !blockedSiblingIds.has(id));
     if (unassignedInCluster.length === 0) continue;
 
     // Find best team for this cluster
@@ -1034,7 +1042,7 @@ export function runRequestsFirstAlgorithm(
     for (const team of workingTeams) {
       if (!canAcceptPlayer(team)) continue;
       // Check if team can fit all unassigned cluster members
-      const remainingCapacity = fullConfig.maxRosterSize - team.assignedPlayerIds.length;
+      const remainingCapacity = getMaxSizeForTeam(team) - team.assignedPlayerIds.length;
       if (remainingCapacity < unassignedInCluster.length) continue;
 
       let score = 0;
@@ -1064,8 +1072,8 @@ export function runRequestsFirstAlgorithm(
       const teamsWithCapacity = workingTeams
         .filter(canAcceptPlayer)
         .sort((a, b) => {
-          const capA = fullConfig.maxRosterSize - a.assignedPlayerIds.length;
-          const capB = fullConfig.maxRosterSize - b.assignedPlayerIds.length;
+          const capA = getMaxSizeForTeam(a) - a.assignedPlayerIds.length;
+          const capB = getMaxSizeForTeam(b) - b.assignedPlayerIds.length;
           return capB - capA;
         });
       bestTeam = teamsWithCapacity[0] || null;
@@ -1101,6 +1109,7 @@ export function runRequestsFirstAlgorithm(
   const playerWeights: PlayerWeight[] = [];
 
   for (const playerId of unassignedPlayers) {
+    if (blockedSiblingIds.has(playerId)) continue;
     const requests = playerRequests.get(playerId) || [];
     let weight = 0;
     const preferredTeamIds: string[] = [];
@@ -1212,6 +1221,7 @@ export function runRequestsFirstAlgorithm(
   // =========================================================================
 
   for (const playerId of unassignedPlayers) {
+    if (blockedSiblingIds.has(playerId)) continue;
     const player = playerMap.get(playerId);
     if (!player) continue;
 
