@@ -799,6 +799,25 @@ class PlayerTeamScopingTests(TestCase):
         self.assertEqual(player.drafted_by_team, self.own_team)
         self.assertEqual(player.locked_to_team, self.own_team)
 
+    def test_bulk_create_preserves_team_builder_request_data(self):
+        response = self._post("/api/players/bulk/", {
+            "division_id": str(self.division.id),
+            "players": [self._player("1", coach_request="Smith", teammate_requests=["Blake River"], school="Oak", grade=2)],
+        })
+        self.assertEqual(response.status_code, 201, response.content)
+        player = Player.objects.get(division=self.division, bib="1")
+        self.assertEqual(player.coach_request, "Smith")
+        self.assertEqual(player.teammate_requests, ["Blake River"])
+        self.assertEqual(player.school, "Oak")
+        self.assertEqual(player.grade, 2)
+
+    def test_bulk_create_rejects_invalid_request_data(self):
+        for fields in ({"teammate_requests": "Blake"}, {"school": "x" * 201}, {"grade": -1}):
+            response = self._post("/api/players/bulk/", {
+                "division_id": str(self.division.id), "players": [self._player("1", **fields)],
+            })
+            self.assertEqual(response.status_code, 400, response.content)
+
     def test_bulk_create_preserves_temporary_excel_sibling_references(self):
         response = self._post("/api/players/bulk/", {
             "division_id": str(self.division.id),

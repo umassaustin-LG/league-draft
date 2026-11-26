@@ -17,6 +17,7 @@ import { RegistrationRecord } from '../types/evaluation';
 import { EvaluationImport } from './evaluation';
 import { NameMatchResolver, TeamBuilderResults, RequestConfirmation, TradeSuggestions } from './teamBuilder';
 import { TradeModal } from './TradeModal';
+import { TeamRosters } from './TeamRosters';
 import {
   runTeamBuilderAlgorithm,
   runRequestsFirstAlgorithm,
@@ -37,6 +38,7 @@ import {
   normalizeRequestData,
   NormalizationResult,
   prepareRequestsForConfirmation,
+  countPlayersWithRequests,
 } from '../utils/teamBuilderParser';
 import * as XLSX from 'xlsx';
 
@@ -107,7 +109,15 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
   const [unmatchedPlayers, setUnmatchedPlayers] = useState<RegistrationPlayer[]>([]);
 
   // Algorithm config
-  const [config, setConfig] = useState<TeamBuilderConfig>(DEFAULT_TEAM_BUILDER_CONFIG);
+  const [config, setConfig] = useState<TeamBuilderConfig>(() => ({
+    ...DEFAULT_TEAM_BUILDER_CONFIG,
+    maxRosterSize: Math.max(
+      DEFAULT_TEAM_BUILDER_CONFIG.maxRosterSize,
+      division.rosterSize,
+      Math.ceil(division.players.length / Math.max(1, division.teams.length)),
+      ...division.teams.map(team => team.roster.length)
+    ),
+  }));
 
   // Normalization result (from request resolution step)
   const [normalizationResult, setNormalizationResult] = useState<NormalizationResult | null>(null);
@@ -422,9 +432,9 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
         bib: evalPlayer.bib,
         firstName: evalPlayer.firstName,
         lastName: evalPlayer.lastName,
-        coachRequest: regPlayer?.coachRequest,
-        teammateRequests: regPlayer?.teammateRequests,
-        school: regPlayer?.school,
+        coachRequest: regPlayer?.coachRequest ?? evalPlayer.coachRequest,
+        teammateRequests: regPlayer?.teammateRequests ?? evalPlayer.teammateRequests,
+        school: regPlayer?.school ?? evalPlayer.school,
       };
     });
 
@@ -555,10 +565,10 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
         littleLeagueAge: regPlayer?.littleLeagueAge ?? evalPlayer.littleLeagueAge,
         // Remap coach team ID to actual division team ID
         coachTeamId: remappedCoachTeamId,
-        coachRequest: normalized?.rawCoachRequest || regPlayer?.coachRequest,
-        teammateRequests: normalized?.rawTeammateRequests || regPlayer?.teammateRequests,
-        school: normalized?.normalizedSchool || regPlayer?.school,
-        grade: regPlayer?.grade ?? undefined,
+        coachRequest: normalized?.rawCoachRequest ?? regPlayer?.coachRequest ?? evalPlayer.coachRequest,
+        teammateRequests: normalized?.rawTeammateRequests ?? regPlayer?.teammateRequests ?? evalPlayer.teammateRequests,
+        school: normalized?.normalizedSchool ?? regPlayer?.school ?? evalPlayer.school,
+        grade: regPlayer?.grade ?? evalPlayer.grade,
         // Use pre-resolved values from normalization
         resolvedCoachTeamId: normalized?.resolvedCoachTeamId || null,
         resolvedTeammateIds: normalized?.resolvedTeammateIds || [],
@@ -700,9 +710,13 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
   // -----------------------------------------------------------------------------
 
   const handleRerun = useCallback(() => {
-    setStep('generate');
+    if (!algorithmResult) {
+      handleProceedToConfirmRequests();
+    } else {
+      setStep('configure');
+    }
     setAlgorithmResult(null);
-  }, []);
+  }, [algorithmResult, handleProceedToConfirmRequests]);
 
   const handleFinalize = useCallback(() => {
     if (onComplete && algorithmResult) {
@@ -1673,7 +1687,7 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
                         {config.maxRosterSize}
                       </div>
                       <button
-                        onClick={() => setConfig({ ...config, maxRosterSize: Math.min(18, config.maxRosterSize + 1) })}
+                        onClick={() => setConfig({ ...config, maxRosterSize: Math.min(Math.max(18, evalPlayers.length, config.maxRosterSize), config.maxRosterSize + 1) })}
                         className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600 font-bold"
                       >
                         +
@@ -1845,7 +1859,7 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
                 </div>
                 <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
                   <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                    {registrationPlayers.filter(p => p.teammateRequests.length > 0).length}
+                    {countPlayersWithRequests(resolvedRequests)}
                   </div>
                   <div className="text-sm text-gray-500 dark:text-gray-400">With Requests</div>
                 </div>
@@ -1873,6 +1887,25 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
         )}
 
         {/* Step 6: Results */}
+        {step === 'results' && !algorithmResult && (
+          <div className="space-y-6">
+            <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-4">
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Saved team rosters</h2>
+              <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                Your saved assignments are shown below. Re-run auto-assignment to generate a new request satisfaction report.
+              </p>
+            </div>
+            <TeamRosters teams={finalTeams.map(team => ({
+              ...team, totalScore: team.roster.reduce((sum, player) => sum + player.totalScore, 0),
+            }))} currentTeamId={null} />
+            <button
+              onClick={handleRerun}
+              className="px-6 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium hover:bg-gray-50 dark:hover:bg-gray-700"
+            >
+              Adjust &amp; Re-run
+            </button>
+          </div>
+        )}
         {step === 'results' && algorithmResult && (
           <div className="space-y-6">
             <TeamBuilderResults
