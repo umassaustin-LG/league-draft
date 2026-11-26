@@ -1,8 +1,4 @@
-import type { AppPhase, Division, DivisionSummary, User } from '../types';
-
-export function getPersistedDraftPhase(phase: AppPhase, savedPhase: AppPhase): AppPhase {
-  return phase === 'draft' && savedPhase === 'complete' ? 'complete' : phase;
-}
+import type { Division, DivisionSummary, User } from '../types';
 
 export function canManageDivision(
   user: User | null,

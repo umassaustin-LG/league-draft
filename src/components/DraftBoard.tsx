@@ -32,6 +32,7 @@ interface DraftControls {
 
 interface DraftBoardProps {
   onBackToDivisions?: () => void;
+  onViewResults?: () => void;
   draftState: DraftState;
   controls?: DraftControls;
   rosterSize?: number;
@@ -75,6 +76,7 @@ export const DraftBoard = ({
   onClearMandatoryPickError,
   voiceCopilotDivisionId,
   onBackToDivisions,
+  onViewResults,
 }: DraftBoardProps) => {
   const siblingState = useMemo(() => getDraftSiblingState(
     savedDraftState,
@@ -426,6 +428,11 @@ export const DraftBoard = ({
         {draftState.isDraftComplete && onBackToDivisions && (
           <button onClick={onBackToDivisions} className="mb-4 rounded-button border border-rule px-4 py-2 text-ink hover:border-rule-strong">
             Back to Divisions
+          </button>
+        )}
+        {draftState.isDraftComplete && onViewResults && (
+          <button onClick={onViewResults} className="mb-4 ml-2 rounded-button border border-rule px-4 py-2 text-ink hover:border-rule-strong">
+            View Results
           </button>
         )}
         {siblingState.released.length > 0 && (

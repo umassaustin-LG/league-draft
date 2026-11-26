@@ -946,6 +946,9 @@ class CompletedDivisionSummaryTests(CrossTenantTestBase):
         self.assertEqual(self.client.get(url).json()["phase"], "draft")
         state.is_draft_complete = True
         state.save()
+        self.assertEqual(self.client.get(url).json()["phase"], "draft")
+        self.victim_division.completed_at = state.updated_at
+        self.victim_division.save(update_fields=["completed_at"])
         self.assertEqual(self.client.get("/api/divisions/").json()[0]["phase"], "complete")
         for user in (self.victim_admin, self.viewer):
             self.client.force_login(user)
@@ -1291,6 +1294,21 @@ class DraftSafetyTests(CrossTenantTestBase):
     def pick(self, index):
         self.state = DraftService.draft_player(self.state.id, self.players[index].id, self.state.current_team_id, actor=self.victim_admin)
 
+    def test_final_pick_waits_for_explicit_finalization(self):
+        for index in range(4):
+            self.pick(index)
+        self.assertTrue(self.state.is_draft_complete)
+        self.division.refresh_from_db()
+        self.assertEqual(self.division.phase, "draft")
+        self.assertIsNone(self.division.completed_at)
+        self.client.force_login(self.victim_admin)
+        url = f"/api/divisions/{self.division.id}/"
+        self.assertEqual(self.client.get(url).json()["phase"], "draft")
+        response = self.client.patch(url, json.dumps({"phase": "complete"}), content_type="application/json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["phase"], "complete")
+        self.assertIsNotNone(response.json()["completed_at"])
+
     def reach_last_sibling(self):
         from .services_readiness import RuleCheckError
 
@@ -1399,6 +1417,9 @@ class DraftSafetyTests(CrossTenantTestBase):
         self.state = DraftService.skip_pick(self.state.id, self.state.current_team_id)
         self.assertTrue(self.state.is_draft_complete)
         self.assertTrue(self.state.picks.order_by("pick").last().was_skipped)
+        self.division.refresh_from_db()
+        self.assertEqual(self.division.phase, "draft")
+        self.assertIsNone(self.division.completed_at)
         self.players[3].refresh_from_db()
         self.assertEqual(self.players[3].coach_team_id, self.victim_teams[0].id)
         self.assertFalse(self.players[3].is_drafted)

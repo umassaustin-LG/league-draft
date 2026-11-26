@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useDivisions } from './hooks/useDivisions';
-import { getPersistedDraftPhase } from './utils/divisionAccess';
 import { useDraft } from './hooks/useDraft';
 import { usePlayerScoring } from './hooks/usePlayerScoring';
 import { useViewMode } from './contexts/ViewContext';
@@ -140,6 +139,8 @@ function App() {
     confirmOverride,
     clearMandatoryPickError,
     returnToDraftBoard,
+    isViewingCompletedDraftBoard,
+    viewResults,
   } = useDraft(activeDivision?.id);
 
   // Server enforces the same rule on the voice copilot token endpoint.
@@ -227,15 +228,14 @@ function App() {
     // Only sync phase changes AFTER the division state has been loaded
     // This prevents the default 'upload' phase from overwriting the API-loaded phase
     // Also prevent concurrent updates (Issue #6)
-    const persistedPhase = getPersistedDraftPhase(phase, activeDivision?.phase ?? phase);
-    if (canEditDivision && divisionStateLoaded && activeDivision && persistedPhase !== activeDivision.phase && !isUpdatingPhase.current) {
+    if (canEditDivision && divisionStateLoaded && activeDivision && phase !== activeDivision.phase && !isUpdatingPhase.current) {
       isUpdatingPhase.current = true;
       // When draft completes, save the completion timestamp and final state
       // Note: Don't pass players here - they're already saved by draft pick API
       // Trying to re-save would trigger delete/recreate which is blocked during draft/complete
-      if (persistedPhase === 'complete') {
+      if (phase === 'complete') {
         updateActiveDivision({
-          phase: persistedPhase,
+          phase,
           completedAt: new Date().toISOString(),
           draftState,
           teams: draftState.teams,
@@ -250,7 +250,7 @@ function App() {
           isUpdatingPhase.current = false;
         });
       } else {
-        updateActiveDivision({ phase: persistedPhase }).then(() => {
+        updateActiveDivision({ phase }).then(() => {
           setSaveError(null);
         }).catch((err) => {
           console.error('Failed to save phase change:', err);
@@ -658,7 +658,7 @@ function App() {
         players: draftState.players.length > 0 ? draftState.players : activeDivision.players,
         teams: draftState.teams.length > 0 ? draftState.teams : activeDivision.teams,
         draftState: draftState.picks.length > 0 ? draftState : activeDivision.draftState,
-        phase: getPersistedDraftPhase(phase, activeDivision.phase),
+        phase,
       });
     }
     clearActiveDivision();
@@ -1170,9 +1170,10 @@ function App() {
           />
         )}
 
-        {phase === 'draft' && (draftState.currentTeamId || pendingComplete || draftState.isDraftComplete) && (
+        {(phase === 'draft' || isViewingCompletedDraftBoard) && (draftState.currentTeamId || pendingComplete || draftState.isDraftComplete) && (
           <DraftBoard
             onBackToDivisions={handleBackToSelector}
+            onViewResults={phase === 'complete' ? viewResults : undefined}
             draftState={draftState}
             controls={{
               onDraftPlayer: draftPlayer,
@@ -1214,7 +1215,7 @@ function App() {
           </div>
         )}
 
-        {phase === 'complete' && (
+        {phase === 'complete' && !isViewingCompletedDraftBoard && (
           <div>
             {/* Back button - separate bar above content */}
             <div className="bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-2">

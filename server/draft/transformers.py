@@ -177,8 +177,7 @@ def transform_draft_state(draft_state) -> dict:
 
 
 def _division_phase(division) -> str:
-    draft_state = getattr(division, "draft_state", None)
-    return "complete" if draft_state and draft_state.is_draft_complete else division.phase
+    return "complete" if division.completed_at else division.phase
 
 
 def transform_division_summary(division) -> dict:
