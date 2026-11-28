@@ -8,7 +8,7 @@ import {
 } from '../types';
 import { api, ApiError } from '../api/client';
 import { saveTeamsToApi, savePlayersToApi } from '../api';
-import { hasGeneratedRosters } from '../utils/divisionAccess';
+import { divisionNameExistsInWorkspace, hasGeneratedRosters } from '../utils/divisionAccess';
 
 // Validation: A division is complete enough to persist when it has players
 export function isDivisionValid(division: Division | null): boolean {
@@ -30,16 +30,21 @@ export function isDivisionPartiallySetup(division: Division | null): boolean {
   );
 }
 
-export function useDivisions(userId?: string) {
+export function useDivisions(userId?: string, organizationId?: string | null) {
   const [, setDivisionIds] = useState<string[]>([]);
-  const [summaries, setSummaries] = useState<DivisionSummary[]>([]);
-  const [activeDivision, setActiveDivision] = useState<Division | null>(null);
+  const [loadedSummaries, setSummaries] = useState<DivisionSummary[]>([]);
+  const [selectedDivision, setActiveDivision] = useState<Division | null>(null);
+  const [loadedWorkspace, setLoadedWorkspace] = useState({ userId, organizationId });
+  const isCurrentWorkspace = loadedWorkspace.userId === userId && loadedWorkspace.organizationId === organizationId;
+  const summaries = isCurrentWorkspace ? loadedSummaries : [];
+  const activeDivision = isCurrentWorkspace ? selectedDivision : null;
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Fetch only with an authenticated session and discard the previous account's data.
   useEffect(() => {
     let cancelled = false;
+    setLoadedWorkspace({ userId, organizationId });
     setActiveDivision(null);
     setSummaries([]);
     setDivisionIds([]);
@@ -65,14 +70,13 @@ export function useDivisions(userId?: string) {
         if (!cancelled) setIsLoading(false);
       });
     return () => { cancelled = true; };
-  }, [userId]);
+  }, [userId, organizationId]);
 
   // Check if a division name already exists (case-insensitive)
   // Only check divisions that have players - empty ones will be cleaned up by the backend
   const divisionNameExists = useCallback((name: string): boolean => {
-    const normalizedName = name.trim().toLowerCase();
-    return summaries.some(s => s.playerCount > 0 && s.name.trim().toLowerCase() === normalizedName);
-  }, [summaries]);
+    return divisionNameExistsInWorkspace(loadedSummaries, name, organizationId);
+  }, [loadedSummaries, organizationId]);
 
   // Create a new division
   const createDivision = useCallback(async (config: {
