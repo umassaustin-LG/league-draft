@@ -23,6 +23,9 @@ class TenantMiddleware(MiddlewareMixin):
         request.organization = None
         request.league = None  # Backwards compatibility alias
 
+        if request.path_info.startswith("/api/auth/"):
+            return
+
         if hasattr(request, "user") and request.user.is_authenticated:
             from .models import Organization
 

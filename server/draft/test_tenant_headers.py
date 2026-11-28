@@ -42,3 +42,16 @@ class TenantHeaderTests(CrossTenantTestBase):
         for value in (str(self.attacker_org.id), str(uuid4())):
             response = self.client.get("/api/divisions/", HTTP_X_ORGANIZATION_ID=value)
             self.assertEqual(response.status_code, 200)
+
+    def test_revoked_membership_does_not_block_session_endpoints(self):
+        self.victim_admin.memberships.filter(organization=self.victim_org).delete()
+        headers = {"HTTP_X_ORGANIZATION_ID": str(self.victim_org.id)}
+        self.assertEqual(self.client.get("/api/divisions/", **headers).status_code, 403)
+        self.assertEqual(self.client.get("/api/auth/csrf/", **headers).status_code, 200)
+        response = self.client.get("/api/auth/me/", **headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["id"], str(self.victim_admin.id))
+        self.assertIn("_auth_user_id", self.client.session)
+        self.assertEqual(self.client.post("/api/auth/logout/", **headers).status_code, 204)
+        self.assertNotIn("_auth_user_id", self.client.session)
+        self.assertEqual(self.client.get("/api/auth/me/", **headers).status_code, 401)
