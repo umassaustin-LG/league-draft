@@ -19,6 +19,7 @@ import { EvaluationImport } from './evaluation';
 import { NameMatchResolver, TeamBuilderResults, RequestConfirmation, TradeSuggestions } from './teamBuilder';
 import { TradeModal } from './TradeModal';
 import { isSuggestedTradeCurrent } from '../utils/teamBuilderTrades';
+import { confirmTeamBuilderFinalization, getUnassignedPlayers } from '../utils/teamBuilderCompletion';
 import { TeamRosters } from './TeamRosters';
 import {
   runTeamBuilderAlgorithm,
@@ -739,6 +740,7 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
       setFinalizeError('No team results are available to save. Please run auto-assignment again.');
       return;
     }
+    if (!confirmTeamBuilderFinalization(finalPlayers, message => window.confirm(message))) return;
     setIsFinalizing(true);
     try {
       await onComplete(finalPlayers, finalTeams);
@@ -1919,6 +1921,17 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
         )}
 
         {/* Step 6: Results */}
+        {step === 'results' && (
+          <div className="mb-4 space-y-2">
+            <p>{finalPlayers.length - getUnassignedPlayers(finalPlayers).length}/{finalPlayers.length} assigned</p>
+            {getUnassignedPlayers(finalPlayers).length > 0 && (
+              <div role="alert" className="rounded-lg bg-amber-50 dark:bg-amber-900/20 p-4 text-amber-800 dark:text-amber-200">
+                <p>Some players are unassigned. Review these players before finalizing teams.</p>
+                <ul>{getUnassignedPlayers(finalPlayers).map(player => <li key={player.id}>{player.name}</li>)}</ul>
+              </div>
+            )}
+          </div>
+        )}
         {step === 'results' && !algorithmResult && (
           <div className="space-y-6">
             <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-4">
