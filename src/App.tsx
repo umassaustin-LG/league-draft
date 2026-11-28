@@ -930,6 +930,7 @@ function App() {
           void refreshSummaries();
         }}
         onUpdateTeams={(teams) => updateActiveDivision({ teams })}
+        onUpdateSettings={(teamBuilderSettings) => updateActiveDivision({ teamBuilderSettings })}
         onUpdatePlayers={(players) => updateActiveDivision({ players })}
         onUpdatePhase={(phase) => updateActiveDivision({ phase })}
         onComplete={(players, teams) => updateActiveDivision({ players, teams })}

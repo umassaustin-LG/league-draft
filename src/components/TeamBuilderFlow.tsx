@@ -12,7 +12,8 @@ import {
   Search,
   ClipboardCheck,
 } from 'lucide-react';
-import { Division, Player, Team, ResolvedRequest, RequestsFirstConfig, DEFAULT_REQUESTS_FIRST_CONFIG, TradeCandidate, AppPhase } from '../types';
+import { Division, Player, Team, ResolvedRequest, RequestsFirstConfig, DEFAULT_REQUESTS_FIRST_CONFIG, TradeCandidate, AppPhase, TeamBuilderSettings } from '../types';
+import { remapSavedResolutions, restoreRequestResolutions, saveRequestResolutions } from '../utils/teamBuilderSettings';
 import { RegistrationRecord } from '../types/evaluation';
 import { EvaluationImport } from './evaluation';
 import { NameMatchResolver, TeamBuilderResults, RequestConfirmation, TradeSuggestions } from './teamBuilder';
@@ -60,6 +61,7 @@ interface TeamBuilderFlowProps {
   onUpdateTeams?: (teams: Team[]) => void | Promise<void>;
   onUpdatePlayers?: (players: Player[]) => void | Promise<void>;
   onUpdatePhase?: (phase: AppPhase) => void;
+  onUpdateSettings?: (settings: TeamBuilderSettings) => void | Promise<void>;
 }
 
 interface RegistrationPlayer {
@@ -81,7 +83,7 @@ interface RegistrationPlayer {
 // Component
 // -----------------------------------------------------------------------------
 
-export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, onUpdatePlayers, onUpdatePhase: _onUpdatePhase }: TeamBuilderFlowProps) => {
+export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, onUpdatePlayers, onUpdateSettings, onUpdatePhase: _onUpdatePhase }: TeamBuilderFlowProps) => {
   // Determine initial step based on division state
   const getInitialStep = (): TeamBuilderStep => {
     // If we have players with team assignments (results), go to results
@@ -120,6 +122,7 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
       Math.ceil(division.players.length / Math.max(1, division.teams.length)),
       ...division.teams.map(team => team.roster.length)
     ),
+    ...division.teamBuilderSettings?.config,
   }));
 
   // Normalization result (from request resolution step)
@@ -141,8 +144,10 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
   const [showSwapModal, setShowSwapModal] = useState(false);
 
   // Request confirmation state
-  const [resolvedRequests, setResolvedRequests] = useState<ResolvedRequest[]>([]);
-  const [algorithmMode, setAlgorithmMode] = useState<AlgorithmMode>('requests-first');
+  const [resolvedRequests, setResolvedRequests] = useState<ResolvedRequest[]>(() => remapSavedResolutions(
+    division.teamBuilderSettings?.resolvedRequests ?? [], division.players, division.teams.map(team => team.id),
+  ));
+  const [algorithmMode, setAlgorithmMode] = useState<AlgorithmMode>(division.teamBuilderSettings?.algorithmMode ?? 'requests-first');
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [requestsFirstConfig, _setRequestsFirstConfig] = useState<RequestsFirstConfig>(DEFAULT_REQUESTS_FIRST_CONFIG);
 
@@ -456,7 +461,9 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
 
     // Prepare resolved requests for confirmation UI
     const preparedRequests = prepareRequestsForConfirmation(normResult, requestsFirstConfig);
-    setResolvedRequests(preparedRequests);
+    setResolvedRequests(previous => restoreRequestResolutions(
+      preparedRequests, previous, evalPlayers, teams.map(team => team.id),
+    ));
 
     // Go to request confirmation step
     setStep('confirm-requests');
@@ -621,6 +628,7 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
     setFinalPlayers(updatedPlayers);
     setFinalTeams(updatedTeams);
     setStep('results');
+    await onUpdateSettings?.({ config, algorithmMode, resolvedRequests: saveRequestResolutions(resolvedRequests, updatedPlayers) });
     await onUpdateTeams?.(updatedTeams);
     await onUpdatePlayers?.(updatedPlayers);
     } catch (err) {
@@ -628,7 +636,7 @@ export const TeamBuilderFlow = ({ division, onBack, onComplete, onUpdateTeams, o
     } finally {
       setIsSavingGeneration(false);
     }
-  }, [evalPlayers, teams, registrationPlayers, config, normalizationResult, algorithmMode, resolvedRequests, requestsFirstConfig, onUpdatePlayers, onUpdateTeams, isSavingGeneration]);
+  }, [evalPlayers, teams, registrationPlayers, config, normalizationResult, algorithmMode, resolvedRequests, requestsFirstConfig, onUpdatePlayers, onUpdateTeams, onUpdateSettings, isSavingGeneration]);
 
   const currentResult = useMemo(() => {
     if (!algorithmResult) return null;
