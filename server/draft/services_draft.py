@@ -502,6 +502,16 @@ class DraftService:
         draft_state.save(update_fields=["mandatory_player", "mandatory_reason", "mandatory_sibling_name"])
         cls._check_and_set_mandatory_pick(draft_state, draft_state.current_team, draft_state.current_round)
 
+    @staticmethod
+    def _get_sibling_name(player: Player) -> str:
+        if player.sibling:
+            return player.sibling
+        if player.sibling_id:
+            return Player.objects.filter(
+                id=player.sibling_id, division_id=player.division_id,
+            ).values_list("name", flat=True).first() or ""
+        return ""
+
     @classmethod
     def _check_and_set_mandatory_pick(
         cls, draft_state: DraftState, team: Team, current_round: int
@@ -553,7 +563,7 @@ class DraftService:
         if locked_sibling:
             draft_state.mandatory_player = locked_sibling
             draft_state.mandatory_reason = "sibling"
-            draft_state.mandatory_sibling_name = locked_sibling.sibling or ""
+            draft_state.mandatory_sibling_name = cls._get_sibling_name(locked_sibling)
             draft_state.save()
             return
 
@@ -594,7 +604,7 @@ class DraftService:
             else:
                 draft_state.mandatory_player = forced_player
                 draft_state.mandatory_reason = "sibling"
-                draft_state.mandatory_sibling_name = forced_player.sibling or ""
+                draft_state.mandatory_sibling_name = cls._get_sibling_name(forced_player)
 
             draft_state.save()
 

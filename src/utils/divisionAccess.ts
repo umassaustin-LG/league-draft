@@ -1,5 +1,18 @@
 import type { Division, DivisionSummary, User } from '../types';
 
+export function canSelectPersonalWorkspace(user: User | null): boolean {
+  return !!user && (user.role === 'master_admin' || user.organizations.length !== 1);
+}
+
+export function isDivisionInWorkspace(division: Pick<DivisionSummary, 'organizationId'>, organizationId?: string | null): boolean {
+  return (division.organizationId ?? null) === (organizationId ?? null);
+}
+
+export function divisionNameExistsInWorkspace(divisions: DivisionSummary[], name: string, organizationId?: string | null): boolean {
+  return divisions.some(division => isDivisionInWorkspace(division, organizationId) && division.playerCount > 0
+    && division.name.trim().toLowerCase() === name.trim().toLowerCase());
+}
+
 export function canManageDivision(
   user: User | null,
   division: Pick<DivisionSummary, 'organizationId' | 'ownerId'>,
