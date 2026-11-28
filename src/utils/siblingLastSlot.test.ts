@@ -104,6 +104,20 @@ describe('live last-slot sibling recovery', () => {
     expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>\s*Finalize draft\s*<\/button>/);
   });
 
+  it.each([
+    ['Cedar', 'Sibling of Cedar'],
+    [undefined, 'Linked sibling'],
+    ['', 'Linked sibling'],
+  ])('renders a mandatory sibling explanation for name %s', (siblingName, explanation) => {
+    const state = finalPickState();
+    state.currentTeamId = 'a';
+    state.picks = state.picks.slice(0, 2);
+    state.mandatoryPick = { playerId: 'last-sibling', reason: 'sibling', siblingName };
+    const markup = renderBoard(state);
+    expect(markup).toContain(explanation);
+    expect(markup).not.toContain('Sibling of undefined');
+  });
+
   it('does not transfer a retained sibling lock after another team drafts the released sibling', () => {
     const players = [
       player('root', { siblingId: 'kept', isDrafted: true, draftedByTeamId: 'a' }),

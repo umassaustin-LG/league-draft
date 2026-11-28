@@ -39,7 +39,7 @@ import {
   AppPhase,
 } from './types';
 import { parseCSVWithMapping, CoachAssignment } from './utils/csvParser';
-import { canManageDivision, canUsePersonalWorkspace, getDefaultLeagueAdminMembership } from './utils/divisionAccess';
+import { canManageDivision, canUsePersonalWorkspace, isDivisionInWorkspace } from './utils/divisionAccess';
 import { getMappingRecoveryPhase } from './utils/importPhase';
 import { savePlayersToApi, saveTeamsToApi } from './api';
 
@@ -50,7 +50,7 @@ function App() {
   // All hooks must be called unconditionally at the top
   const viewMode = useViewMode();
   const isPublicView = viewMode === 'public';
-  const { isAuthenticated, isInitialized, user, logout, checkAuth } = useAuth();
+  const { isAuthenticated, isInitialized, user, logout, checkAuth, activeOrganizationId, switchOrganization } = useAuth();
   const [authPage, setAuthPage] = useState<AuthPage>('login');
   const [resetParams, setResetParams] = useState<{ uid: string; token: string } | null>(null);
   const [joinToken, setJoinToken] = useState<string | null>(null);
@@ -110,10 +110,12 @@ function App() {
     deleteDivision,
     clearActiveDivision,
     refreshSummaries,
-  } = useDivisions(user?.id);
+  } = useDivisions(user?.id, activeOrganizationId);
   const canEditDivision = !isPublicView && !!activeDivision && canManageDivision(user, activeDivision);
-  const leagueAdminMembership = getDefaultLeagueAdminMembership(user);
-  const canCreateDivision = !isPublicView && (!!leagueAdminMembership || canUsePersonalWorkspace(user));
+  const leagueAdminMembership = activeOrganizationId
+    ? user?.organizations.find(m => m.organizationId === activeOrganizationId && m.role === 'admin')
+    : undefined;
+  const canCreateDivision = !isPublicView && (activeOrganizationId ? !!leagueAdminMembership : canUsePersonalWorkspace(user));
 
   const {
     phase,
@@ -854,6 +856,11 @@ function App() {
   if (mode === 'selector' || mode === 'templates') {
     return (
       <DivisionSelector
+        activeOrganizationId={activeOrganizationId}
+        onSwitchOrganization={organizationId => {
+          clearActiveDivision();
+          switchOrganization(organizationId);
+        }}
         divisions={summaries}
         onSelectDivision={handleSelectDivision}
         onCreateNew={canCreateDivision ? () => setMode('creator') : undefined}
@@ -871,7 +878,7 @@ function App() {
     // Only check names of divisions that have players (non-empty divisions)
     // Empty divisions are not shown to users, so shouldn't block new creation
     const existingNames = summaries
-      .filter(s => s.playerCount > 0)
+      .filter(s => s.playerCount > 0 && isDivisionInWorkspace(s, activeOrganizationId))
       .map(s => s.name);
 
     return (
