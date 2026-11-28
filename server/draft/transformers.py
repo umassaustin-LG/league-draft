@@ -230,6 +230,7 @@ def transform_division(division, include_all: bool = False) -> dict:
         "team_count": division.team_count,
         "roster_size": division.roster_size,
         "scoring_weights": division.scoring_weights,
+        "team_builder_settings": division.team_builder_settings,
         "scoring_mode": division.scoring_mode,
         "mode": division.mode,
         "phase": _division_phase(division),

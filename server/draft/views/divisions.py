@@ -186,6 +186,8 @@ def division_detail(request, pk):
     # Protect division during/after draft - only allow phase changes
     if division.phase in ("draft", "complete"):
         allowed_fields = {"phase"}
+        if division.mode == "league-generated":
+            allowed_fields.add("team_builder_settings")
         requested_fields = set(data.keys())
         if not requested_fields.issubset(allowed_fields):
             return json_response(

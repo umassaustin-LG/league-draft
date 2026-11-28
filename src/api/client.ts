@@ -404,6 +404,7 @@ function transformDivisionFromApi(data: Record<string, unknown>): Division {
     players,
     draftState,
     scoringWeights: data.scoring_weights as ScoringWeights,
+    teamBuilderSettings: (data.team_builder_settings as Division['teamBuilderSettings']) ?? null,
     scoringMode: data.scoring_mode as ScoringMode,
     phase: data.phase as Division['phase'],
     createdAt: data.created_at as string,
@@ -876,6 +877,7 @@ export const api = {
       teamCount: number;
       rosterSize: number;
       scoringWeights: ScoringWeights;
+      teamBuilderSettings: Division['teamBuilderSettings'];
       scoringMode: ScoringMode;
       phase: Division['phase'];
     }>
@@ -889,6 +891,7 @@ export const api = {
     if (updates.teamCount !== undefined) body.team_count = updates.teamCount;
     if (updates.rosterSize !== undefined) body.roster_size = updates.rosterSize;
     if (updates.scoringWeights !== undefined) body.scoring_weights = updates.scoringWeights;
+    if (updates.teamBuilderSettings !== undefined) body.team_builder_settings = updates.teamBuilderSettings;
     if (updates.scoringMode !== undefined) body.scoring_mode = updates.scoringMode;
     if (updates.phase !== undefined) body.phase = updates.phase;
 
