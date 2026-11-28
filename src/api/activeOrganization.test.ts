@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { api, getAnnouncerStatus, speakAnnouncement } from './client';
-import { getActiveOrganizationId, selectActiveOrganization } from './activeOrganization';
+import { clearInvalidOrganization, getActiveOrganizationId, selectActiveOrganization } from './activeOrganization';
 import { DivisionSelector } from '../components/DivisionSelector';
 import type { User, OrganizationMembership, DivisionSummary } from '../types';
 import { canSelectPersonalWorkspace, divisionNameExistsInWorkspace, isDivisionInWorkspace } from '../utils/divisionAccess';
@@ -15,6 +15,47 @@ const user = (id = 'user', organizations = [membership('one'), membership('two')
 afterEach(() => { selectActiveOrganization(null); vi.unstubAllGlobals(); });
 
 describe('active league selection', () => {
+  it('recovers from a revoked membership without retrying a request in another workspace', async () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => values.get(key), setItem: (key: string, value: string) => values.set(key, value),
+      removeItem: (key: string) => values.delete(key),
+    });
+    vi.stubGlobal('document', { cookie: '' });
+    const reload = vi.fn();
+    vi.stubGlobal('window', { location: { reload } });
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      error: 'You do not have access to the selected organization.', code: 'invalid_organization',
+    }), { status: 403, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetch);
+    selectActiveOrganization(user(), 'two');
+    await expect(api.listDivisions()).rejects.toMatchObject({ status: 403 });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(getActiveOrganizationId()).toBeNull();
+    expect(values.has('active-organization:user')).toBe(false);
+    expect(clearInvalidOrganization('two')).toBe(false);
+    expect(selectActiveOrganization(user('user', [membership('one')]))).toBe('one');
+    expect(selectActiveOrganization(user(), 'two')).toBe('two');
+    expect(selectActiveOrganization(user('user', [membership('one')]))).toBe('one');
+  });
+
+  it('does not clear the workspace for ordinary permission errors or obsolete responses', async () => {
+    vi.stubGlobal('localStorage', { getItem: () => null, setItem: vi.fn(), removeItem: vi.fn() });
+    vi.stubGlobal('document', { cookie: '' });
+    const reload = vi.fn();
+    vi.stubGlobal('window', { location: { reload } });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: 'Forbidden' }), {
+      status: 403, headers: { 'Content-Type': 'application/json' },
+    })));
+    selectActiveOrganization(user(), 'two');
+    expect(clearInvalidOrganization('one')).toBe(false);
+    expect(clearInvalidOrganization(null)).toBe(false);
+    await expect(api.listDivisions()).rejects.toMatchObject({ status: 403 });
+    expect(getActiveOrganizationId()).toBe('two');
+    expect(reload).not.toHaveBeenCalled();
+  });
+
   it('defaults, switches and restores selection per user and sends it on reads and writes', async () => {
     const values = new Map<string, string>();
     vi.stubGlobal('localStorage', {

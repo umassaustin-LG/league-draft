@@ -140,14 +140,16 @@ class PersonalDivisionAccessTests(TestCase):
             ("post", f"/api/team-builder/{div}/update-requests/", {"players": []}),
         ]
 
-    def assert_denied(self, division, teams, players, **headers):
+    def assert_denied(self, division, teams, players, collection_status=200, **headers):
         state = DraftService.start_draft(division.id, "straight", [team.id for team in teams])
         for method, url, body in self.denied_requests(division, teams, players, state):
             with self.subTest(method=method, url=url, headers=headers):
                 response = self.request(method, url, body, **headers)
                 self.assertIn(response.status_code, (403, 404), response.content)
         for collection in ("players", "teams"):
-            self.assertEqual(self.assert_response("get", f"/api/{collection}/?division_id={division.id}", **headers).json(), [])
+            response = self.assert_response("get", f"/api/{collection}/?division_id={division.id}", status=collection_status, **headers)
+            if collection_status == 200:
+                self.assertEqual(response.json(), [])
         state.refresh_from_db()
         self.assertEqual(state.picks.count(), 0)
         self.assertEqual(division.players.count(), 4)
@@ -163,7 +165,7 @@ class PersonalDivisionAccessTests(TestCase):
         )
         teams = [Team.objects.create(division=division, name=f"Foreign {i}", draft_position=i) for i in (1, 2)]
         players = [Player.objects.create(division=division, **data) for data in self.player_data]
-        self.assert_denied(division, teams, players, HTTP_X_ORGANIZATION_ID=str(self.foreign.id))
+        self.assert_denied(division, teams, players, collection_status=403, HTTP_X_ORGANIZATION_ID=str(self.foreign.id))
         self.assertNotIn(str(division.id), [item["id"] for item in self.client.get("/api/divisions/").json()])
 
     @override_settings(ELEVENLABS_API_KEY="test-key")
