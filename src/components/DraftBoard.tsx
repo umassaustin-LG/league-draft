@@ -287,7 +287,9 @@ export const DraftBoard = ({
         detail:
           draftState.mandatoryPick.reason === 'coach-kid'
             ? "Coach's kid"
-            : `Sibling of ${draftState.mandatoryPick.siblingName}`,
+            : draftState.mandatoryPick.siblingName
+              ? `Sibling of ${draftState.mandatoryPick.siblingName}`
+              : 'Linked sibling',
         primaryLabel: 'Draft',
         onPrimary: () =>
           mandatoryPlayerForScoreboard && requestDraft(mandatoryPlayerForScoreboard.id),
