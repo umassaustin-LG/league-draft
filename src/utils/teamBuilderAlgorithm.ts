@@ -237,8 +237,19 @@ function placeSiblingGroups(
   unassigned: Set<string>,
   assign: (playerId: string, teamId: string, reason: AssignmentReason) => unknown,
   capacity: (team: TeamBuilderTeam) => number,
-  warnings: string[]
+  warnings: string[],
+  requests: ResolvedRequest[]
 ): Set<string> {
+  const requestedTeams = new Map(players.map(player => {
+    const coachRequests = requests.filter(request => request.playerId === player.id && request.requestType === 'coach');
+    const targets = coachRequests.length
+      ? coachRequests.filter(request => request.status === 'auto-confirmed' || request.status === 'user-confirmed')
+        .map(request => request.resolvedTargetId)
+      : [player.resolvedCoachTeamId];
+    return [player.id, new Set(targets.filter(Boolean))];
+  }));
+  const coachScore = (group: TeamBuilderPlayer[], teamId: string) =>
+    group.filter(player => requestedTeams.get(player.id)!.has(teamId)).length;
   const byId = new Map(players.map(player => [player.id, player]));
   const neighbors = new Map(players.map(player => [player.id, new Set<string>()]));
   for (const player of players) {
@@ -283,7 +294,7 @@ function placeSiblingGroups(
     const team = anchors.size > 1 ? undefined : [...teams]
       .filter(team => (!anchors.size || anchors.has(team.id))
         && team.assignedPlayerIds.length + remaining.length <= capacity(team))
-      .sort((a, b) => a.currentScore - b.currentScore)[0];
+      .sort((a, b) => coachScore(group, b.id) - coachScore(group, a.id) || a.currentScore - b.currentScore)[0];
     if (!team) {
       warnings.push(`Sibling group ${group.map(member => member.name).join(', ')} could not be placed together within roster limits and locked assignments. Existing placements are unchanged; remaining siblings are unassigned.`);
       remaining.forEach(member => blocked.add(member.id));
@@ -477,7 +488,7 @@ export function runTeamBuilderAlgorithm(
     const teamsWithExtra = workingTeams.filter(t => t.assignedPlayerIds.length > baseRosterSize).length;
     const canHaveExtra = team.assignedPlayerIds.length > baseRosterSize || teamsWithExtra < extraPlayers;
     return Math.min(config.maxRosterSize, baseRosterSize + Number(canHaveExtra));
-  }, warnings);
+  }, warnings, resolvedRequests);
 
   // =========================================================================
   // PHASE 1: Top talent distribution
@@ -990,7 +1001,7 @@ export function runRequestsFirstAlgorithm(
   }
 
   const blockedSiblingIds = placeSiblingGroups(players, workingTeams, unassignedPlayers, assignPlayer,
-    getMaxSizeForTeam, warnings);
+    getMaxSizeForTeam, warnings, resolvedRequests);
 
   // =========================================================================
   // PHASE 1: Build and place two-way request clusters

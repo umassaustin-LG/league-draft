@@ -49,6 +49,66 @@ it('keeps a two-way cluster together on a team with room for the entire cluster 
 });
 
 describe.each(['balance-first', 'requests-first'] as const)('%s confirmed siblings', mode => {
+  it('places Avery and Blake with their confirmed requested coach before filling other teams', () => {
+    const players = makePlayers();
+    players[2].resolvedCoachTeamId = 't4';
+    players[2].coachRequest = 'Coach Pine';
+    players[2].twoWayTeammateIds = ['p4'];
+    players[3].twoWayTeammateIds = ['p3'];
+    const requests: ResolvedRequest[] = [
+      { id: 'coach', playerId: 'p3', requestType: 'coach', rawRequestString: 'Coach Pine',
+        resolvedTargetId: 't4', resolvedTargetName: 'Coach Pine', status: 'user-confirmed', confidenceScore: 1, isTwoWay: false },
+      ...[['p3', 'p4'], ['p4', 'p3']].map(([playerId, target]) => ({
+        id: playerId, playerId, requestType: 'teammate' as const, rawRequestString: target,
+        resolvedTargetId: target, resolvedTargetName: target, status: 'user-confirmed' as const, confidenceScore: 1, isTwoWay: true,
+      })),
+    ];
+    const config = { ...DEFAULT_TEAM_BUILDER_CONFIG, minRosterSize: 2, maxRosterSize: 4, forceEvenTeams: true, prioritizeBalance: false };
+    const teams = makeTeams();
+    teams[0].teamName = 'Oak';
+    teams[3].headCoach = 'Coach Pine';
+    const result = mode === 'balance-first'
+      ? runTeamBuilderAlgorithm(players, teams, config, requests)
+      : runRequestsFirstAlgorithm(players, teams, requests, config);
+    expect(result.assignments.filter(a => ['p3', 'p4'].includes(a.playerId)).map(a => a.teamId)).toEqual(['t4', 't4']);
+    expect(result.stats.coachRequestsHonored).toBe(1);
+    expect(result.stats.twoWayRequestsHonored).toBe(2);
+    expect(result.stats.averageHappiness).toBe(1);
+    if ('suggestedTrades' in result) {
+      for (const id of ['p3', 'p4']) {
+        expect(result.suggestedTrades).not.toEqual(expect.arrayContaining([expect.objectContaining({ player1Id: id })]));
+        expect(result.suggestedTrades).not.toEqual(expect.arrayContaining([expect.objectContaining({ player2Id: id })]));
+      }
+    }
+    expect(result.assignments).toHaveLength(10);
+    expect(result.teamSummaries.map(team => team.rosterCount)).toEqual([2, 2, 2, 2, 2]);
+  });
+
+  it.each(['coach-anchor', 'full-team', 'unconfirmed', 'missing-team'] as const)('keeps hard constraints and ignores unavailable preferences: %s', scenario => {
+    const players = makePlayers();
+    players[2].resolvedCoachTeamId = 't4';
+    if (scenario === 'coach-anchor') {
+      players[2].isCoachKid = true;
+      players[2].coachTeamId = 't1';
+    }
+    if (scenario === 'full-team') {
+      players[0].lockedToTeamId = 't4';
+      players[1].lockedToTeamId = 't4';
+    }
+    const requests: ResolvedRequest[] = [{
+      id: 'coach', playerId: 'p3', requestType: 'coach', rawRequestString: 'Coach Pine',
+      resolvedTargetId: scenario === 'missing-team' ? 'missing' : 't4', resolvedTargetName: 'Coach Pine',
+      status: scenario === 'unconfirmed' ? 'needs-review' : 'user-confirmed', confidenceScore: 1, isTwoWay: false,
+    }];
+    const config = { ...DEFAULT_TEAM_BUILDER_CONFIG, minRosterSize: 2, maxRosterSize: 4, forceEvenTeams: true };
+    const result = mode === 'balance-first'
+      ? runTeamBuilderAlgorithm(players, makeTeams(), config, requests)
+      : runRequestsFirstAlgorithm(players, makeTeams(), requests, config);
+    const siblings = result.assignments.filter(a => ['p3', 'p4'].includes(a.playerId));
+    expect(siblings.map(a => a.teamId)).toEqual(['t1', 't1']);
+    expect(result.assignments).toHaveLength(10);
+  });
+
   const run = (players = makePlayers(), overrides: Partial<TeamBuilderConfig> = {}, teams = makeTeams()) => {
     const config = { ...DEFAULT_TEAM_BUILDER_CONFIG, minRosterSize: 2, ...overrides };
     return mode === 'balance-first'
