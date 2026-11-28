@@ -1,10 +1,11 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Player, Team, ResolvedRequest } from '../types';
 import { TeamBuilderResults } from '../components/teamBuilder/TeamBuilderResults';
 import { AssignmentResult, summarizeTeamBuilderAssignments } from './teamBuilderAlgorithm';
 import { isSuggestedTradeCurrent } from './teamBuilderTrades';
+import { confirmTeamBuilderFinalization } from './teamBuilderCompletion';
 
 const players = [90, 71.2, 65, 46.2].map((totalScore, i) => ({
   id: `p${i}`, name: `Player ${i}`, firstName: 'Player', lastName: String(i), totalScore,
@@ -18,6 +19,59 @@ const requests: ResolvedRequest[] = [{
 }];
 
 describe('results after roster edits', () => {
+  it('counts confirmed requests from unassigned players as unsatisfied', () => {
+    const allRequests = [requests[0], { ...requests[0], id: 'r2', playerId: 'p2', resolvedTargetId: 't1' }];
+    const result = summarizeTeamBuilderAssignments(players, teams, assignments.slice(0, 2), allRequests);
+    expect(result.stats.requestingPlayers).toBe(2);
+    expect(result.stats.coachRequestsTotal).toBe(2);
+    expect(result.stats.averageHappiness).toBe(0.5);
+    expect(result.playerHappiness.find(h => h.playerId === 'p2')?.score).toBe('none');
+    const html = renderToStaticMarkup(createElement(TeamBuilderResults, { result, players }));
+    expect(html).toContain('50%');
+    expect(html).not.toContain('No requests');
+    const unassigned = summarizeTeamBuilderAssignments(players, teams, [], allRequests);
+    expect(unassigned.stats.averageHappiness).toBe(0);
+    expect(unassigned.stats.coachRequestsHonored).toBe(0);
+  });
+
+  it.each(['needs-review', 'unresolvable'] as const)('does not call %s requests absent or include them in the percentage', status => {
+    const pending = { ...requests[0], playerId: 'p2', id: 'pending', status, resolvedTargetId: null };
+    const result = summarizeTeamBuilderAssignments(players, teams, assignments.slice(0, 2), [requests[0], pending]);
+    expect(result.stats.requestingPlayers).toBe(2);
+    expect(result.stats.averageHappiness).toBe(1);
+    expect(result.stats.coachRequestsTotal).toBe(1);
+    const onlyPending = summarizeTeamBuilderAssignments(players, teams, [], [pending]);
+    const html = renderToStaticMarkup(createElement(TeamBuilderResults, { result: onlyPending, players }));
+    expect(html).not.toContain('No requests');
+    expect(html).toContain('No confirmed requests');
+    expect(html).not.toContain('100%');
+    expect(onlyPending.stats.coachRequestsTotal).toBe(0);
+  });
+
+  it('recognizes raw requests even before they have resolution records', () => {
+    const raw = [{ ...players[0], teammateRequests: ['Blake'], coachRequest: 'Pine' }];
+    expect(summarizeTeamBuilderAssignments(raw, teams, [], []).stats.requestingPlayers).toBe(1);
+  });
+
+  it('shows no requests rather than a perfect happiness score for incomplete rosters', () => {
+    const result = summarizeTeamBuilderAssignments(players, teams, assignments.slice(0, 1), []);
+    const html = renderToStaticMarkup(createElement(TeamBuilderResults, { result, players }));
+    expect(html).toContain('No requests');
+    expect(html).not.toContain('100%');
+  });
+
+  it('requires explicit confirmation for unassigned players, but not complete or empty rosters', () => {
+    const confirm = vi.fn().mockReturnValue(false);
+    expect(confirmTeamBuilderFinalization(players, confirm)).toBe(false);
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('4 of 4 players are unassigned: Player 0'));
+    confirm.mockReturnValue(true);
+    expect(confirmTeamBuilderFinalization(players, confirm)).toBe(true);
+    confirm.mockClear();
+    expect(confirmTeamBuilderFinalization(players.map(p => ({ ...p, draftedByTeamId: 't0' })), confirm)).toBe(true);
+    expect(confirmTeamBuilderFinalization([], confirm)).toBe(true);
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
   it('renders swapped placements, totals, averages, and recomputed happiness', () => {
     const before = summarizeTeamBuilderAssignments(players, teams, assignments, requests);
     expect(before.teamSummaries.map(t => t.averageScore)).toEqual([80.6, 55.6]);

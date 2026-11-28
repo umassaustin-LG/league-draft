@@ -100,6 +100,7 @@ export interface TeamBuilderResult {
   warnings: string[];
   stats: {
     totalPlayers: number;
+    requestingPlayers: number;
     lockedPlayers: number;
     topTalentPlayers: number;
     requestBasedPlayers: number;
@@ -123,6 +124,13 @@ export interface TeamSummary {
   averageScore: number; // Average score per player (totalScore / rosterCount)
   meanDelta: number; // Difference from mean average (positive = above, negative = below)
   meanDeltaPercent: number; // As percentage of mean average
+}
+
+function countRequestingPlayers(players: TeamBuilderPlayer[], requests: ResolvedRequest[]): number {
+  const requesterIds = new Set(requests.map(request => request.playerId));
+  return players.filter(player => requesterIds.has(player.id) || player.coachRequest?.trim()
+    || player.teammateRequests?.some(request => request.trim()) || player.resolvedCoachTeamId
+    || player.twoWayTeammateIds?.length || player.oneWayTeammateIds?.length).length;
 }
 
 export function fillMinimumRosters(
@@ -650,20 +658,8 @@ export function runTeamBuilderAlgorithm(
   // Player happiness
   const playerHappiness: PlayerHappiness[] = players.map(player => {
     const assignment = assignments.find(a => a.playerId === player.id);
-    if (!assignment) {
-      return {
-        playerId: player.id,
-        score: 'no-requests' as HappinessScore,
-        coachRequestHonored: null,
-        teammateRequestsHonored: 0,
-        teammateRequestsTotal: 0,
-        twoWayRequestsHonored: 0,
-        twoWayRequestsTotal: 0,
-      };
-    }
-
-    const teamId = assignment.teamId;
-    const team = workingTeams.find(t => t.id === teamId)!;
+    const teamId = assignment?.teamId;
+    const team = workingTeams.find(t => t.id === teamId);
 
     // Coach request
     const hasCoachRequest = !!player.resolvedCoachTeamId;
@@ -675,11 +671,11 @@ export function runTeamBuilderAlgorithm(
     const teammateRequestsTotal = twoWayTotal + oneWayTotal;
 
     const twoWayHonored = player.twoWayTeammateIds?.filter(id =>
-      team.assignedPlayerIds.includes(id)
+      team?.assignedPlayerIds.includes(id)
     ).length || 0;
 
     const oneWayHonored = player.oneWayTeammateIds?.filter(id =>
-      team.assignedPlayerIds.includes(id)
+      team?.assignedPlayerIds.includes(id)
     ).length || 0;
 
     const teammateRequestsHonored = twoWayHonored + oneWayHonored;
@@ -751,6 +747,7 @@ export function runTeamBuilderAlgorithm(
     warnings,
     stats: {
       totalPlayers: players.length,
+      requestingPlayers: countRequestingPlayers(players, resolvedRequests),
       lockedPlayers: lockedCount,
       topTalentPlayers: topTalentAssigned,
       requestBasedPlayers: requestBasedCount,
@@ -1308,20 +1305,8 @@ export function summarizeTeamBuilderAssignments(
   // Player happiness
   const playerHappiness: PlayerHappiness[] = players.map(player => {
     const assignment = assignments.find(a => a.playerId === player.id);
-    if (!assignment) {
-      return {
-        playerId: player.id,
-        score: 'no-requests' as HappinessScore,
-        coachRequestHonored: null,
-        teammateRequestsHonored: 0,
-        teammateRequestsTotal: 0,
-        twoWayRequestsHonored: 0,
-        twoWayRequestsTotal: 0,
-      };
-    }
-
-    const teamId = assignment.teamId;
-    const team = workingTeams.find(t => t.id === teamId)!;
+    const teamId = assignment?.teamId;
+    const team = workingTeams.find(t => t.id === teamId);
     const requests = playerRequests.get(player.id) || [];
 
     // Coach request
@@ -1347,10 +1332,10 @@ export function summarizeTeamBuilderAssignments(
     const teammateRequestsTotal = twoWayTotal + oneWayTotal;
 
     const twoWayHonored = teammateRequests.filter(r =>
-      r.isTwoWay && team.assignedPlayerIds.includes(r.resolvedTargetId!)
+      r.isTwoWay && team?.assignedPlayerIds.includes(r.resolvedTargetId!)
     ).length;
     const oneWayHonored = teammateRequests.filter(r =>
-      !r.isTwoWay && team.assignedPlayerIds.includes(r.resolvedTargetId!)
+      !r.isTwoWay && team?.assignedPlayerIds.includes(r.resolvedTargetId!)
     ).length;
     const teammateRequestsHonored = twoWayHonored + oneWayHonored;
 
@@ -1421,6 +1406,7 @@ export function summarizeTeamBuilderAssignments(
     warnings,
     stats: {
       totalPlayers: players.length,
+      requestingPlayers: countRequestingPlayers(players, resolvedRequests),
       lockedPlayers: lockedCount,
       topTalentPlayers: topTalentAssigned,
       requestBasedPlayers: requestBasedCount,
