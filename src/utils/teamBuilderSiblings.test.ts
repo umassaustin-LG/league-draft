@@ -116,6 +116,37 @@ describe.each(['balance-first', 'requests-first'] as const)('%s confirmed siblin
       : runRequestsFirstAlgorithm(players, teams, [], config);
   };
 
+  it.each(['remaining-pairs', 'minimum-rosters'] as const)('does not trade placement feasibility for a coach request: %s', scenario => {
+    const players = makePlayers().slice(0, scenario === 'remaining-pairs' ? 8 : 4);
+    players[0].isCoachKid = true;
+    players[0].coachTeamId = scenario === 'remaining-pairs' ? 't2' : 't1';
+    if (scenario === 'remaining-pairs') {
+      players[0].totalScore = 0;
+      players[1].siblingId = 'p3';
+      players[3].siblingId = 'p2';
+      players[4].siblingId = 'p6';
+      players[5].siblingId = 'p5';
+      players[6].siblingId = 'p8';
+      players[7].siblingId = 'p7';
+    }
+    const requester = scenario === 'remaining-pairs' ? players[1] : players[2];
+    requester.resolvedCoachTeamId = 't1';
+    const requests: ResolvedRequest[] = [{
+      id: 'coach', playerId: requester.id, requestType: 'coach', rawRequestString: 'Coach Oak',
+      resolvedTargetId: 't1', resolvedTargetName: 'Coach Oak', status: 'user-confirmed', confidenceScore: 1, isTwoWay: false,
+    }];
+    const config = { ...DEFAULT_TEAM_BUILDER_CONFIG, minRosterSize: 2,
+      maxRosterSize: scenario === 'remaining-pairs' ? 4 : 3, forceEvenTeams: scenario === 'remaining-pairs', prioritizeBalance: false };
+    const teams = scenario === 'remaining-pairs' ? makeTeams(2).reverse() : makeTeams(2);
+    const result = mode === 'balance-first'
+      ? runTeamBuilderAlgorithm(players, teams, config, requests)
+      : runRequestsFirstAlgorithm(players, teams, requests, config);
+    expect(result.assignments).toHaveLength(players.length);
+    expect(result.teamSummaries.map(team => team.rosterCount)).toEqual(scenario === 'remaining-pairs' ? [4, 4] : [2, 2]);
+    expect(result.assignments.find(assignment => assignment.playerId === requester.id)?.teamId).toBe('t2');
+    expect(result.warnings).toEqual([]);
+  });
+
   it('keeps the 10-player/5-team reproducer pair together with default two top-talent rounds', () => {
     const players = makePlayers();
     const original = structuredClone(players);

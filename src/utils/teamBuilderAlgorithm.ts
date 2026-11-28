@@ -238,7 +238,8 @@ function placeSiblingGroups(
   assign: (playerId: string, teamId: string, reason: AssignmentReason) => unknown,
   capacity: (team: TeamBuilderTeam) => number,
   warnings: string[],
-  requests: ResolvedRequest[]
+  requests: ResolvedRequest[],
+  preferCoachRequests: boolean
 ): Set<string> {
   const requestedTeams = new Map(players.map(player => {
     const coachRequests = requests.filter(request => request.playerId === player.id && request.requestType === 'coach');
@@ -294,7 +295,8 @@ function placeSiblingGroups(
     const team = anchors.size > 1 ? undefined : [...teams]
       .filter(team => (!anchors.size || anchors.has(team.id))
         && team.assignedPlayerIds.length + remaining.length <= capacity(team))
-      .sort((a, b) => coachScore(group, b.id) - coachScore(group, a.id) || a.currentScore - b.currentScore)[0];
+      .sort((a, b) => (preferCoachRequests ? coachScore(group, b.id) - coachScore(group, a.id) : 0)
+        || a.currentScore - b.currentScore)[0];
     if (!team) {
       warnings.push(`Sibling group ${group.map(member => member.name).join(', ')} could not be placed together within roster limits and locked assignments. Existing placements are unchanged; remaining siblings are unassigned.`);
       remaining.forEach(member => blocked.add(member.id));
@@ -305,6 +307,21 @@ function placeSiblingGroups(
   return blocked;
 }
 
+function chooseSiblingPlacement<T extends TeamBuilderResult>(
+  players: TeamBuilderPlayer[],
+  minRosterSize: number,
+  run: (preferCoachRequests: boolean) => T
+): T {
+  const preferred = run(true);
+  if (!players.some(player => player.siblingId)) return preferred;
+  const baseline = run(false);
+  const shortfall = (result: T) => result.teamSummaries.reduce(
+    (total, team) => total + Math.max(0, Math.max(1, minRosterSize) - team.rosterCount), 0,
+  );
+  return preferred.assignments.length >= baseline.assignments.length && shortfall(preferred) <= shortfall(baseline)
+    ? preferred : baseline;
+}
+
 /**
  * Run the team builder auto-assignment algorithm.
  */
@@ -313,6 +330,17 @@ export function runTeamBuilderAlgorithm(
   teams: Team[],
   config: TeamBuilderConfig = DEFAULT_TEAM_BUILDER_CONFIG,
   resolvedRequests: ResolvedRequest[] = []
+): TeamBuilderResult {
+  return chooseSiblingPlacement(players, config.minRosterSize, preferCoachRequests =>
+    assignBalancedTeams(players, teams, config, resolvedRequests, preferCoachRequests));
+}
+
+function assignBalancedTeams(
+  players: TeamBuilderPlayer[],
+  teams: Team[],
+  config: TeamBuilderConfig,
+  resolvedRequests: ResolvedRequest[],
+  preferCoachRequests: boolean
 ): TeamBuilderResult {
   const warnings: string[] = [];
   const assignments: AssignmentResult[] = [];
@@ -488,7 +516,7 @@ export function runTeamBuilderAlgorithm(
     const teamsWithExtra = workingTeams.filter(t => t.assignedPlayerIds.length > baseRosterSize).length;
     const canHaveExtra = team.assignedPlayerIds.length > baseRosterSize || teamsWithExtra < extraPlayers;
     return Math.min(config.maxRosterSize, baseRosterSize + Number(canHaveExtra));
-  }, warnings, resolvedRequests);
+  }, warnings, resolvedRequests, preferCoachRequests);
 
   // =========================================================================
   // PHASE 1: Top talent distribution
@@ -868,6 +896,17 @@ export function runRequestsFirstAlgorithm(
   resolvedRequests: ResolvedRequest[],
   config: Partial<RequestsFirstConfig> = {}
 ): RequestsFirstResult {
+  return chooseSiblingPlacement(players, config.minRosterSize ?? DEFAULT_REQUESTS_FIRST_CONFIG.minRosterSize,
+    preferCoachRequests => assignRequestsFirstTeams(players, teams, resolvedRequests, config, preferCoachRequests));
+}
+
+function assignRequestsFirstTeams(
+  players: TeamBuilderPlayer[],
+  teams: Team[],
+  resolvedRequests: ResolvedRequest[],
+  config: Partial<RequestsFirstConfig>,
+  preferCoachRequests: boolean
+): RequestsFirstResult {
   const fullConfig = { ...DEFAULT_REQUESTS_FIRST_CONFIG, ...config };
   const warnings: string[] = [];
   const assignments: AssignmentResult[] = [];
@@ -1001,7 +1040,7 @@ export function runRequestsFirstAlgorithm(
   }
 
   const blockedSiblingIds = placeSiblingGroups(players, workingTeams, unassignedPlayers, assignPlayer,
-    getMaxSizeForTeam, warnings, resolvedRequests);
+    getMaxSizeForTeam, warnings, resolvedRequests, preferCoachRequests);
 
   // =========================================================================
   // PHASE 1: Build and place two-way request clusters
