@@ -935,6 +935,82 @@ class CrossTenantTestBase(TestCase):
         ]
 
 
+class CompletedDivisionSummaryTests(CrossTenantTestBase):
+    def test_finished_draft_is_not_listed_as_in_progress_even_with_legacy_phase(self):
+        self.victim_division.phase = "draft"
+        self.victim_division.save()
+        state = DraftState.objects.create(division=self.victim_division, draft_format="straight")
+        self.client.force_login(self.victim_admin)
+        self.assertEqual(self.client.get("/api/divisions/").json()[0]["phase"], "draft")
+        url = f"/api/divisions/{self.victim_division.id}/?include=all"
+        self.assertEqual(self.client.get(url).json()["phase"], "draft")
+        state.is_draft_complete = True
+        state.save()
+        self.assertEqual(self.client.get(url).json()["phase"], "draft")
+        self.victim_division.completed_at = state.updated_at
+        self.victim_division.save(update_fields=["completed_at"])
+        self.assertEqual(self.client.get("/api/divisions/").json()[0]["phase"], "complete")
+        for user in (self.victim_admin, self.viewer):
+            self.client.force_login(user)
+            self.assertEqual(self.client.get(url).json()["phase"], "complete")
+            self.assertTrue(self.client.get(url).json()["draft_state"]["is_draft_complete"])
+
+    def test_summary_and_detail_keep_the_phase_without_a_draft_state(self):
+        self.client.force_login(self.viewer)
+        self.assertEqual(self.client.get("/api/divisions/").json()[0]["phase"], self.victim_division.phase)
+        self.assertEqual(self.client.get(f"/api/divisions/{self.victim_division.id}/").json()["phase"], self.victim_division.phase)
+
+
+class TeamBuilderSettingsTests(CrossTenantTestBase):
+    def test_settings_round_trip_and_clear(self):
+        self.client.force_login(self.victim_admin)
+        url = f"/api/divisions/{self.victim_division.id}/"
+        self.assertIsNone(self.client.get(url + "?include=all").json()["team_builder_settings"])
+        settings = {
+            "config": {"minRosterSize": 2, "maxRosterSize": 14, "forceEvenTeams": True},
+            "algorithmMode": "balance-first",
+            "resolvedRequests": [{
+                "id": "req-1", "playerId": str(self.victim_players[0].id), "requestType": "teammate",
+                "rawRequestString": "Kid V1", "resolvedTargetId": str(self.victim_players[1].id),
+                "resolvedTargetName": "Kid V1", "status": "user-confirmed", "confidenceScore": 0.5,
+                "isTwoWay": False,
+                "requesterIdentity": '["V0","kid","v0"]',
+                "targetPlayerIdentity": '["V1","kid","v1"]',
+            }],
+        }
+        response = self.client.patch(url, json.dumps({"team_builder_settings": settings}), content_type="application/json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.client.get(url + "?include=all").json()["team_builder_settings"], settings)
+        old_ids = {str(player.id) for player in self.victim_players}
+        for _ in range(2):
+            response = self.client.delete(f"/api/players/delete_by_division/?division_id={self.victim_division.id}")
+            self.assertEqual(response.status_code, 200)
+            response = self.client.post("/api/players/bulk/", json.dumps({
+                "division_id": str(self.victim_division.id),
+                "players": [{"id": str(player.id), "bib": player.bib, "first_name": player.first_name,
+                             "last_name": player.last_name, "little_league_age": 9} for player in self.victim_players],
+            }), content_type="application/json")
+            self.assertEqual(response.status_code, 201)
+            new_ids = {player["id"] for player in response.json()}
+            self.assertTrue(old_ids.isdisjoint(new_ids))
+            old_ids = new_ids
+            self.assertEqual(self.client.get(url + "?include=all").json()["team_builder_settings"], settings)
+        response = self.client.patch(url, json.dumps({"team_builder_settings": None}), content_type="application/json")
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.json()["team_builder_settings"])
+
+    def test_invalid_settings_and_unauthorized_updates_are_rejected(self):
+        self.client.force_login(self.victim_admin)
+        url = f"/api/divisions/{self.victim_division.id}/"
+        for settings in [[], {"config": 3}, {"algorithmMode": "unknown"}, {
+            "algorithmMode": "requests-first", "config": {"minRosterSize": 14, "maxRosterSize": 2, "forceEvenTeams": True},
+        }]:
+            response = self.client.patch(url, json.dumps({"team_builder_settings": settings}), content_type="application/json")
+            self.assertEqual(response.status_code, 400)
+        self.client.force_login(self.viewer)
+        self.assertEqual(self.client.patch(url, '{"team_builder_settings": null}', content_type="application/json").status_code, 403)
+
+
 class ActiveOrganizationTests(CrossTenantTestBase):
     @override_settings(ELEVENLABS_API_KEY="test-key")
     def test_multi_membership_no_header_lists_and_creates_personal_divisions(self):
@@ -1309,6 +1385,21 @@ class DraftSafetyTests(CrossTenantTestBase):
     def pick(self, index):
         self.state = DraftService.draft_player(self.state.id, self.players[index].id, self.state.current_team_id, actor=self.victim_admin)
 
+    def test_final_pick_waits_for_explicit_finalization(self):
+        for index in range(4):
+            self.pick(index)
+        self.assertTrue(self.state.is_draft_complete)
+        self.division.refresh_from_db()
+        self.assertEqual(self.division.phase, "draft")
+        self.assertIsNone(self.division.completed_at)
+        self.client.force_login(self.victim_admin)
+        url = f"/api/divisions/{self.division.id}/"
+        self.assertEqual(self.client.get(url).json()["phase"], "draft")
+        response = self.client.patch(url, json.dumps({"phase": "complete"}), content_type="application/json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["phase"], "complete")
+        self.assertIsNotNone(response.json()["completed_at"])
+
     def reach_last_sibling(self):
         from .services_readiness import RuleCheckError
 
@@ -1417,6 +1508,9 @@ class DraftSafetyTests(CrossTenantTestBase):
         self.state = DraftService.skip_pick(self.state.id, self.state.current_team_id)
         self.assertTrue(self.state.is_draft_complete)
         self.assertTrue(self.state.picks.order_by("pick").last().was_skipped)
+        self.division.refresh_from_db()
+        self.assertEqual(self.division.phase, "draft")
+        self.assertIsNone(self.division.completed_at)
         self.players[3].refresh_from_db()
         self.assertEqual(self.players[3].coach_team_id, self.victim_teams[0].id)
         self.assertFalse(self.players[3].is_drafted)

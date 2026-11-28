@@ -176,6 +176,10 @@ def transform_draft_state(draft_state) -> dict:
     }
 
 
+def _division_phase(division) -> str:
+    return "complete" if division.completed_at else division.phase
+
+
 def transform_division_summary(division) -> dict:
     """Transform a Division to summary dict (for list view)."""
     counts = division.players.aggregate(total=Count("pk"), assigned=Count("drafted_by_team"))
@@ -187,7 +191,7 @@ def transform_division_summary(division) -> dict:
         "player_count": counts["total"],
         "has_generated_rosters": division.mode == "league-generated" and counts["assigned"] > 0,
         "mode": division.mode,
-        "phase": division.phase,
+        "phase": _division_phase(division),
         "created_at": division.created_at.isoformat(),
         "completed_at": division.completed_at.isoformat() if division.completed_at else None,
     }
@@ -226,9 +230,10 @@ def transform_division(division, include_all: bool = False) -> dict:
         "team_count": division.team_count,
         "roster_size": division.roster_size,
         "scoring_weights": division.scoring_weights,
+        "team_builder_settings": division.team_builder_settings,
         "scoring_mode": division.scoring_mode,
         "mode": division.mode,
-        "phase": division.phase,
+        "phase": _division_phase(division),
         "created_at": division.created_at.isoformat(),
         "updated_at": division.updated_at.isoformat(),
         "completed_at": division.completed_at.isoformat() if division.completed_at else None,

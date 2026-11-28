@@ -42,7 +42,7 @@ const controls = {
   pendingComplete: false, onFinalizeDraft: vi.fn(), onCancelComplete: vi.fn(),
 };
 const renderBoard = (state: DraftState, rosterSize = 2) => renderToStaticMarkup(
-  createElement(DraftBoard, { draftState: state, controls, rosterSize, enforceAgeLimit: false, maxPerAge: 0 }),
+  createElement(DraftBoard, { draftState: state, controls, rosterSize, enforceAgeLimit: false, maxPerAge: 0, onBackToDivisions: vi.fn() }),
 );
 
 describe('live last-slot sibling recovery', () => {
@@ -85,6 +85,65 @@ describe('live last-slot sibling recovery', () => {
         expect(markup).not.toContain('Undrafted players');
       }
     }
+  });
+
+  it('offers non-destructive navigation on a completed board and preserves completion when viewing it', () => {
+    const state = finalPickState();
+    expect(renderBoard(state)).not.toContain('Back to Divisions');
+    state.isDraftComplete = true;
+    expect(renderBoard(state)).toContain('Back to Divisions');
+    const markup = renderToStaticMarkup(createElement(DraftBoard, {
+      draftState: state, controls, onViewResults: vi.fn(),
+      rosterSize: 2, enforceAgeLimit: false, maxPerAge: 0,
+    }));
+    expect(markup).toContain('View Results');
+    expect(state.picks).toHaveLength(3);
+  });
+
+  it('waits for explicit finalization before persisting the completed phase', () => {
+    const state = finalPickState();
+    state.isDraftComplete = true;
+    const markup = renderToStaticMarkup(createElement(DraftBoard, {
+      draftState: state, controls: { ...controls, pendingComplete: true },
+      rosterSize: 2, enforceAgeLimit: false, maxPerAge: 0,
+    }));
+    expect(markup).toContain('Finalize draft');
+    expect(markup).toContain('Back to review');
+  });
+
+  it.each([true, false])('shows View Results for a finalized draft regardless of unfilled slots (all slots filled: %s)', isDraftComplete => {
+    const state = finalPickState();
+    state.isDraftComplete = isDraftComplete;
+    const markup = renderToStaticMarkup(createElement(DraftBoard, {
+      draftState: state, controls: { ...controls, onRequestComplete: vi.fn() }, onViewResults: vi.fn(),
+      onBackToDivisions: vi.fn(), rosterSize: 2, enforceAgeLimit: false, maxPerAge: 0,
+    }));
+    expect(markup).toContain('View Results');
+    expect(markup).toContain('Back to Divisions');
+    expect(markup).not.toContain('Finalize draft');
+  });
+
+  it('keeps Finalize accessible after dismissing the completion confirmation', () => {
+    const state = finalPickState();
+    const render = () => renderToStaticMarkup(createElement(DraftBoard, {
+      draftState: state, controls: { ...controls, onRequestComplete: vi.fn() },
+      rosterSize: 2, enforceAgeLimit: false, maxPerAge: 0,
+    }));
+    expect(render()).not.toContain('Finalize draft');
+    state.isDraftComplete = true;
+    expect(render()).toContain('Finalize draft');
+    state.isDraftComplete = false;
+    state.players = state.players.map(player => ({ ...player, isDrafted: true }));
+    expect(render()).toContain('Finalize draft');
+  });
+
+  it('disables reopening finalization while a draft request is saving', () => {
+    const state = { ...finalPickState(), isDraftComplete: true };
+    const markup = renderToStaticMarkup(createElement(DraftBoard, {
+      draftState: state, controls: { ...controls, onRequestComplete: vi.fn() }, isLoading: true,
+      rosterSize: 2, enforceAgeLimit: false, maxPerAge: 0,
+    }));
+    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>\s*Finalize draft\s*<\/button>/);
   });
 
   it.each([
