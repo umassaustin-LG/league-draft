@@ -3,7 +3,7 @@
  * Handles communication with Django REST Framework API
  */
 
-import { getActiveOrganizationId } from './activeOrganization';
+import { clearInvalidOrganization, getActiveOrganizationId } from './activeOrganization';
 import type {
   DraftAuditEvent,
   DraftReadiness,
@@ -110,7 +110,7 @@ function getDefaultOptions(method: string = 'GET'): RequestInit {
 }
 
 export async function getAnnouncerStatus(signal?: AbortSignal): Promise<{ enabled: boolean }> {
-  const response = await fetch(`${API_BASE_URL}/elevenlabs/status/`, {
+  const response = await fetchWithCSRFRetry(`${API_BASE_URL}/elevenlabs/status/`, {
     ...getDefaultOptions(), signal,
   });
   if (!response.ok) throw new Error('Announcer unavailable');
@@ -118,7 +118,7 @@ export async function getAnnouncerStatus(signal?: AbortSignal): Promise<{ enable
 }
 
 export async function speakAnnouncement(text: string, signal: AbortSignal): Promise<Blob> {
-  const response = await fetch(`${API_BASE_URL}/elevenlabs/speak/`, {
+  const response = await fetchWithCSRFRetry(`${API_BASE_URL}/elevenlabs/speak/`, {
     ...getDefaultOptions('POST'), method: 'POST', body: JSON.stringify({ text }), signal,
   });
   if (!response.ok) throw new Error('Announcer unavailable');
@@ -622,6 +622,12 @@ async function fetchWithCSRFRetry(
       const contentType = clonedResponse.headers.get('content-type');
       if (contentType && contentType.includes('application/json')) {
         const details = await clonedResponse.json();
+        if (details?.code === 'invalid_organization') {
+          if (clearInvalidOrganization(new Headers(options.headers).get('X-Organization-ID'))) {
+            window.location.reload();
+          }
+          return response;
+        }
         const isCSRFError =
           details?.detail === 'CSRF Failed: CSRF token missing or incorrect.' ||
           details?.detail?.includes('CSRF');
@@ -716,7 +722,7 @@ export const api = {
   // ---------------------------------------------------------------------------
 
   async health(): Promise<{ status: string }> {
-    const response = await fetch(`${API_BASE_URL.replace('/api', '')}/health`, getDefaultOptions());
+    const response = await fetchWithCSRFRetry(`${API_BASE_URL.replace('/api', '')}/health`, getDefaultOptions());
     return handleResponse(response);
   },
 
@@ -782,7 +788,7 @@ export const api = {
   },
 
   async getCurrentUser(): Promise<User> {
-    const response = await fetch(`${API_BASE_URL}/auth/me/`, getDefaultOptions());
+    const response = await fetchWithCSRFRetry(`${API_BASE_URL}/auth/me/`, getDefaultOptions());
     const result = await handleResponse<Record<string, unknown>>(response);
     return transformUserFromApi(result);
   },
@@ -814,13 +820,13 @@ export const api = {
   // ---------------------------------------------------------------------------
 
   async listDivisions(): Promise<DivisionSummary[]> {
-    const response = await fetch(`${API_BASE_URL}/divisions/`, getDefaultOptions());
+    const response = await fetchWithCSRFRetry(`${API_BASE_URL}/divisions/`, getDefaultOptions());
     const data = await handleResponse<Record<string, unknown>[]>(response);
     return data.map(transformDivisionSummaryFromApi);
   },
 
   async getDivision(id: string): Promise<Division> {
-    const response = await fetch(`${API_BASE_URL}/divisions/${id}/?include=all`, getDefaultOptions());
+    const response = await fetchWithCSRFRetry(`${API_BASE_URL}/divisions/${id}/?include=all`, getDefaultOptions());
     const data = await handleResponse<Record<string, unknown>>(response);
     return transformDivisionFromApi(data);
   },
@@ -917,7 +923,7 @@ export const api = {
   // ---------------------------------------------------------------------------
 
   async getPlayer(id: string): Promise<Player> {
-    const response = await fetch(`${API_BASE_URL}/players/${id}/`, getDefaultOptions());
+    const response = await fetchWithCSRFRetry(`${API_BASE_URL}/players/${id}/`, getDefaultOptions());
     const data = await handleResponse<Record<string, unknown>>(response);
     return transformPlayerFromApi(data);
   },
@@ -966,7 +972,7 @@ export const api = {
   // ---------------------------------------------------------------------------
 
   async getTeam(id: string): Promise<Team> {
-    const response = await fetch(`${API_BASE_URL}/teams/${id}/`, getDefaultOptions());
+    const response = await fetchWithCSRFRetry(`${API_BASE_URL}/teams/${id}/`, getDefaultOptions());
     const data = await handleResponse<Record<string, unknown>>(response);
     return transformTeamFromApi(data);
   },
@@ -1001,7 +1007,7 @@ export const api = {
   },
 
   async listTeams(divisionId: string): Promise<Team[]> {
-    const response = await fetch(`${API_BASE_URL}/teams/?division_id=${divisionId}`, getDefaultOptions());
+    const response = await fetchWithCSRFRetry(`${API_BASE_URL}/teams/?division_id=${divisionId}`, getDefaultOptions());
     const data = await handleResponse<Record<string, unknown>[]>(response);
     return data.map(transformTeamFromApi);
   },
@@ -1204,7 +1210,7 @@ export const api = {
   // ---------------------------------------------------------------------------
 
   async listLeagueMembers(leagueId: string): Promise<LeagueMember[]> {
-    const response = await fetch(`${API_BASE_URL}/leagues/${leagueId}/members/`, getDefaultOptions());
+    const response = await fetchWithCSRFRetry(`${API_BASE_URL}/leagues/${leagueId}/members/`, getDefaultOptions());
     const data = await handleResponse<Record<string, unknown>[]>(response);
     return data.map(transformLeagueMemberFromApi);
   },
@@ -1232,7 +1238,7 @@ export const api = {
   // ---------------------------------------------------------------------------
 
   async listLeagueInvitations(leagueId: string): Promise<LeagueInvitation[]> {
-    const response = await fetch(`${API_BASE_URL}/leagues/${leagueId}/invitations/`, getDefaultOptions());
+    const response = await fetchWithCSRFRetry(`${API_BASE_URL}/leagues/${leagueId}/invitations/`, getDefaultOptions());
     const data = await handleResponse<Record<string, unknown>[]>(response);
     return data.map(transformLeagueInvitationFromApi);
   },
@@ -1279,7 +1285,7 @@ export const api = {
   // ---------------------------------------------------------------------------
 
   async getJoinLinkStatus(leagueId: string): Promise<JoinLinkStatus> {
-    const response = await fetch(`${API_BASE_URL}/leagues/${leagueId}/join-link/`, getDefaultOptions());
+    const response = await fetchWithCSRFRetry(`${API_BASE_URL}/leagues/${leagueId}/join-link/`, getDefaultOptions());
     const data = await handleResponse<Record<string, unknown>>(response);
     return {
       enabled: data.enabled as boolean,
@@ -1315,7 +1321,7 @@ export const api = {
   },
 
   async getJoinLinkInfo(token: string): Promise<JoinLinkInfo> {
-    const response = await fetch(`${API_BASE_URL}/leagues/join/${token}/`, getDefaultOptions());
+    const response = await fetchWithCSRFRetry(`${API_BASE_URL}/leagues/join/${token}/`, getDefaultOptions());
     const data = await handleResponse<Record<string, unknown>>(response);
     const orgName = (data.organization_name || data.league_name) as string;
     const orgSlug = (data.organization_slug || data.league_slug) as string;
@@ -1336,13 +1342,13 @@ export const api = {
   // ---------------------------------------------------------------------------
 
   async listEvaluationTemplates(): Promise<EvaluationTemplate[]> {
-    const response = await fetch(`${API_BASE_URL}/evaluation-templates/`, getDefaultOptions());
+    const response = await fetchWithCSRFRetry(`${API_BASE_URL}/evaluation-templates/`, getDefaultOptions());
     const data = await handleResponse<Record<string, unknown>[]>(response);
     return data.map(transformTemplateFromApi);
   },
 
   async getEvaluationTemplate(id: string): Promise<EvaluationTemplate> {
-    const response = await fetch(`${API_BASE_URL}/evaluation-templates/${id}/`, getDefaultOptions());
+    const response = await fetchWithCSRFRetry(`${API_BASE_URL}/evaluation-templates/${id}/`, getDefaultOptions());
     const data = await handleResponse<Record<string, unknown>>(response);
     return transformTemplateFromApi(data);
   },
@@ -1380,7 +1386,7 @@ export const api = {
   // ---------------------------------------------------------------------------
 
   async listSeasons(): Promise<Season[]> {
-    const response = await fetch(`${API_BASE_URL}/seasons/`, getDefaultOptions());
+    const response = await fetchWithCSRFRetry(`${API_BASE_URL}/seasons/`, getDefaultOptions());
     const data = await handleResponse<Record<string, unknown>[]>(response);
     return data.map(transformSeasonFromApi);
   },

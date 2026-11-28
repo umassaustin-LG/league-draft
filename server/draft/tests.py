@@ -1041,11 +1041,11 @@ class ActiveOrganizationTests(CrossTenantTestBase):
             self.assertEqual(response.status_code, 200)
             self.assertEqual([item["id"] for item in response.json()], [str(division.id)])
 
-    def test_nonmember_header_is_ignored_and_single_membership_still_defaults(self):
+    def test_nonmember_header_is_rejected_and_single_membership_still_defaults(self):
         self.client.force_login(self.attacker)
         response = self.client.get("/api/divisions/", HTTP_X_ORGANIZATION_ID=str(self.victim_org.id))
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), [])
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["code"], "invalid_organization")
         self.client.force_login(self.victim_admin)
         response = self.client.get("/api/divisions/")
         self.assertEqual(response.status_code, 200)

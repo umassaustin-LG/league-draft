@@ -2,6 +2,8 @@
 Middleware for tenant (organization) isolation.
 """
 
+from django.core.exceptions import ValidationError
+from django.http import JsonResponse
 from django.utils.deprecation import MiddlewareMixin
 
 
@@ -36,11 +38,21 @@ class TenantMiddleware(MiddlewareMixin):
                         pass
             else:
                 # Regular users - get organization from membership
-                if org_id:
+                supplied_id = request.headers.get("X-Organization-ID")
+                if supplied_id is None:
+                    supplied_id = request.headers.get("X-League-ID")
+                if supplied_id is not None:
                     # User specified an organization - verify they have membership
-                    membership = request.user.memberships.filter(organization_id=org_id).first()
-                    if membership:
-                        request.organization = membership.organization
+                    try:
+                        membership = request.user.memberships.filter(organization_id=supplied_id).first()
+                    except ValidationError:
+                        membership = None
+                    if membership is None:
+                        return JsonResponse({
+                            "error": "You do not have access to the selected organization.",
+                            "code": "invalid_organization",
+                        }, status=403)
+                    request.organization = membership.organization
                 else:
                     # No organization specified - use first membership if only one
                     memberships = request.user.memberships.select_related("organization").all()

@@ -2,6 +2,14 @@ import type { User } from '../types';
 import { canSelectPersonalWorkspace } from '../utils/divisionAccess';
 
 let activeOrganizationId: string | null = null;
+let activeStorageKey: string | null = null;
+
+export function clearInvalidOrganization(rejectedId: string | null): boolean {
+  if (!rejectedId || rejectedId !== activeOrganizationId) return false;
+  activeOrganizationId = null;
+  try { if (activeStorageKey) localStorage.removeItem(activeStorageKey); } catch { /* Storage may be unavailable. */ }
+  return true;
+}
 
 export function getActiveOrganizationId() {
   return activeOrganizationId;
@@ -9,6 +17,7 @@ export function getActiveOrganizationId() {
 
 export function selectActiveOrganization(user: User | null, preferredId?: string): string | null {
   activeOrganizationId = null;
+  activeStorageKey = user ? `active-organization:${user.id}` : null;
   if (!user) return null;
   const key = `active-organization:${user.id}`;
   let savedId: string | null = null;
