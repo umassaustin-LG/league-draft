@@ -16,7 +16,7 @@ interface JoinPageProps {
 }
 
 export function JoinPage({ token, onJoinComplete, onCancel }: JoinPageProps) {
-  const { isAuthenticated, isInitialized, user, login, register } = useAuth();
+  const { isAuthenticated, isInitialized, user, login, register, checkAuth } = useAuth();
   const [linkInfo, setLinkInfo] = useState<JoinLinkInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
@@ -72,7 +72,8 @@ export function JoinPage({ token, onJoinComplete, onCancel }: JoinPageProps) {
     try {
       setJoining(true);
       setError(null);
-      await api.acceptInvitation(token);
+      const invitation = await api.acceptInvitation(token);
+      await checkAuth(invitation.organizationId);
       setSuccess(true);
       setTimeout(() => {
         onJoinComplete();

@@ -1,9 +1,11 @@
+from uuid import uuid4
+
 from django.test import TestCase
 
 from .models import Division, Organization, Player, Team
 from .services_draft import DraftService
 from .services_readiness import RuleCheckError, evaluate_pick
-from .transformers import transform_player
+from .transformers import transform_draft_state, transform_player
 
 
 class CoachSiblingTests(TestCase):
@@ -30,6 +32,29 @@ class CoachSiblingTests(TestCase):
             little_league_age=9, total_score=80 - i, projected_round=1,
         ) for i in range(8)]
         self.state = DraftService.start_draft(self.division.id, "straight", [team.id for team in self.teams])
+
+    def test_mandatory_sibling_name_uses_link_when_raw_name_is_blank(self):
+        self.cedar.locked_to_team = self.teams[0]
+        for current_round, roster_size in [(2, 2), (1, 1)]:
+            self.division.roster_size = roster_size
+            self.division.save()
+            self.state.division = self.division
+            for raw_name, sibling_id, expected in [
+                ("", self.delta.id, self.delta.name),
+                ("Imported sibling", self.delta.id, "Imported sibling"),
+                ("", None, ""),
+                ("", uuid4(), ""),
+            ]:
+                with self.subTest(round=current_round, raw_name=raw_name, sibling_id=sibling_id):
+                    self.cedar.sibling = raw_name
+                    self.cedar.sibling_id = sibling_id
+                    self.cedar.save()
+                    DraftService._check_and_set_mandatory_pick(self.state, self.teams[0], current_round)
+                    self.state.refresh_from_db()
+                    self.assertEqual(self.state.mandatory_player_id, self.cedar.id)
+                    self.assertEqual(self.state.mandatory_reason, "sibling")
+                    self.assertEqual(self.state.mandatory_sibling_name, expected)
+                    self.assertEqual(transform_draft_state(self.state)["mandatory_pick"]["sibling_name"], expected or None)
 
     def test_splitting_coach_family_requires_override_and_preserves_coach_assignment(self):
         with self.assertRaises(RuleCheckError) as error:

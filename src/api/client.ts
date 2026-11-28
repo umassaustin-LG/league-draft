@@ -3,6 +3,7 @@
  * Handles communication with Django REST Framework API
  */
 
+import { getActiveOrganizationId } from './activeOrganization';
 import type {
   DraftAuditEvent,
   DraftReadiness,
@@ -93,6 +94,7 @@ function getDefaultOptions(method: string = 'GET'): RequestInit {
     credentials: 'include', // Include session cookies
     headers: {
       'Content-Type': 'application/json',
+      ...(getActiveOrganizationId() ? { 'X-Organization-ID': getActiveOrganizationId()! } : {}),
     },
   };
 
@@ -586,7 +588,7 @@ async function refreshCSRFToken(): Promise<boolean> {
   isRefreshingCSRF = true;
   try {
     await fetch(`${API_BASE_URL}/auth/csrf/`, {
-      credentials: 'include',
+      ...getDefaultOptions(),
     });
     return true;
   } catch {
