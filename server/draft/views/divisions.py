@@ -3,7 +3,6 @@ Division views (replaces DRF DivisionViewSet).
 """
 
 from django.db import models
-from django.db.models import Q
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.http import require_http_methods
@@ -16,6 +15,8 @@ from .helpers import (
     parse_json_body,
     require_auth,
     get_organization_from_request,
+    divisions_for_request,
+    can_manage_division,
 )
 
 
@@ -37,18 +38,7 @@ def divisions_list_create(request):
     organization = get_organization_from_request(request)
 
     if request.method == "GET":
-        # List divisions - include org divisions and personal divisions
-        if request.user.role == "master_admin":
-            divisions = Division.objects.all()
-        else:
-            # User sees: org divisions (if in an org) + their personal divisions
-            if organization:
-                divisions = Division.objects.filter(
-                    Q(organization=organization) | Q(owner=request.user)
-                )
-            else:
-                # No org selected - show only personal divisions
-                divisions = Division.objects.filter(owner=request.user)
+        divisions = divisions_for_request(request)
 
         return json_response([transform_division_summary(d) for d in divisions])
 
@@ -134,20 +124,9 @@ def divisions_list_create(request):
 @require_auth
 def division_detail(request, pk):
     """Retrieve, update, or delete a division."""
-    organization = get_organization_from_request(request)
-
     # Get division with access control
     try:
-        if request.user.role == "master_admin":
-            division = Division.objects.get(id=pk)
-        else:
-            # User can access: org divisions (if member) or their own personal divisions
-            if organization:
-                division = Division.objects.get(
-                    Q(id=pk) & (Q(organization=organization) | Q(owner=request.user))
-                )
-            else:
-                division = Division.objects.get(id=pk, owner=request.user)
+        division = divisions_for_request(request).get(id=pk)
     except Division.DoesNotExist:
         return json_response({"error": "Not found"}, status=404)
 
@@ -159,11 +138,7 @@ def division_detail(request, pk):
 
     if request.method == "DELETE":
         # Only owner or org admin can delete
-        can_delete = (
-            request.user.role == "master_admin" or
-            division.owner == request.user or
-            (division.organization and request.user.is_org_admin(division.organization))
-        )
+        can_delete = can_manage_division(request.user, division)
         if not can_delete:
             return json_response({"error": "Permission denied"}, status=403)
         division.delete()
@@ -175,11 +150,7 @@ def division_detail(request, pk):
         return json_response({"error": parse_error}, status=400)
 
     # Check permissions for updates
-    can_update = (
-        request.user.role == "master_admin" or
-        division.owner == request.user or
-        (division.organization and request.user.is_org_admin(division.organization))
-    )
+    can_update = can_manage_division(request.user, division)
     if not can_update:
         return json_response({"error": "Permission denied"}, status=403)
 
@@ -216,28 +187,14 @@ def division_detail(request, pk):
 @require_auth
 def division_reset(request, pk):
     """Reset a division's draft state - owner or admin only."""
-    organization = get_organization_from_request(request)
-
     # Get division with access control
     try:
-        if request.user.role == "master_admin":
-            division = Division.objects.get(id=pk)
-        else:
-            if organization:
-                division = Division.objects.get(
-                    Q(id=pk) & (Q(organization=organization) | Q(owner=request.user))
-                )
-            else:
-                division = Division.objects.get(id=pk, owner=request.user)
+        division = divisions_for_request(request).get(id=pk)
     except Division.DoesNotExist:
         return json_response({"error": "Not found"}, status=404)
 
     # Verify user can reset this division
-    can_reset = (
-        request.user.role == "master_admin" or
-        division.owner == request.user or
-        (division.organization and request.user.is_org_admin(division.organization))
-    )
+    can_reset = can_manage_division(request.user, division)
     if not can_reset:
         return json_response(
             {"error": "Only division owner or organization admin can reset drafts"},

@@ -24,7 +24,7 @@ export function canManageDivision(
       membership => membership.organizationId === division.organizationId && membership.role === 'admin',
     );
   }
-  return canUsePersonalWorkspace(user) && division.ownerId === user.id;
+  return division.ownerId === user.id;
 }
 
 export function canUsePersonalWorkspace(user: User | null): boolean {

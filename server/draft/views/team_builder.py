@@ -9,7 +9,6 @@ Endpoints:
 """
 
 import uuid
-from django.db.models import Q
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.http import require_http_methods
 
@@ -24,7 +23,8 @@ from ..services.team_builder import (
 from ..transformers import transform_team_builder_result
 from ..input_validators import validate_team_builder_config, validate_team_builder_run
 from .helpers import (
-    get_organization_from_request,
+    divisions_for_request,
+    can_manage_division,
     json_response,
     parse_json_body,
     require_auth,
@@ -38,25 +38,12 @@ def _get_division_for_write(request, div_uuid):
     Returns (division, None) or (None, error_response).
     """
     user = request.user
-    organization = get_organization_from_request(request)
-
     try:
-        if user.role == "master_admin":
-            division = Division.objects.get(id=div_uuid)
-        elif organization:
-            division = Division.objects.get(
-                Q(id=div_uuid) & (Q(organization=organization) | Q(owner=user))
-            )
-        else:
-            division = Division.objects.get(id=div_uuid, owner=user)
+        division = divisions_for_request(request).get(id=div_uuid)
     except Division.DoesNotExist:
         return None, json_response({"error": "Division not found"}, status=404)
 
-    can_write = (
-        user.role == "master_admin"
-        or division.owner_id == user.id
-        or (division.organization and user.is_org_admin(division.organization))
-    )
+    can_write = can_manage_division(user, division)
     if not can_write:
         return None, json_response({"error": "Permission denied"}, status=403)
 
