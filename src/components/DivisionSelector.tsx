@@ -189,7 +189,7 @@ export const DivisionSelector = ({
                           {division.name}
                         </h3>
                         <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${getPhaseColor(view === 'rosters' ? 'complete' : division.phase)}`}>
-                          {division.hasGeneratedRosters ? 'Rosters Ready' : getPhaseLabel(division.phase)}
+                          {division.hasGeneratedRosters ? 'Rosters Ready' : getPhaseLabel(view === 'rosters' ? 'complete' : division.phase)}
                         </span>
                       </div>
 

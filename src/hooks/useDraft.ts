@@ -49,6 +49,8 @@ export const useDraft = (_divisionId?: string) => {
   const [savedDraftState, setDraftState] = useState<DraftState>(initialDraftState);
   const draftState = useMemo(() => clearForeignCoachMandatoryPick(savedDraftState), [savedDraftState]);
   const [pendingComplete, setPendingComplete] = useState(false);
+  const completionTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isViewingCompletedDraftBoard, setIsViewingCompletedDraftBoard] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingRuleWarnings, setPendingRuleWarnings] = useState<{ playerId: string; warnings: PickWarning[] } | null>(null);
@@ -63,9 +65,6 @@ export const useDraft = (_divisionId?: string) => {
 
   // Synchronous lock to prevent concurrent operations (prevents race conditions from rapid clicks)
   const operationInProgress = useRef(false);
-
-  // Flag to override auto-complete detection (when user explicitly goes back to draft)
-  const overrideCompleteDetection = useRef(false);
 
   // Load state from a division object (called when selecting a division)
   const loadDivisionState = useCallback((division: Division) => {
@@ -89,16 +88,9 @@ export const useDraft = (_divisionId?: string) => {
       draftStateId.current = null;
     }
 
-    // If draft is complete, ensure we go to complete phase even if division.phase
-    // hasn't been updated yet (race condition fix)
-    // BUT: skip this if user explicitly requested to go back to draft board
-    if (division.draftState?.isDraftComplete && !overrideCompleteDetection.current) {
-      setPhase('complete');
-    } else {
-      setPhase(division.phase);
-    }
-    // Reset the override flag after use
-    overrideCompleteDetection.current = false;
+    setPhase(division.phase);
+    setPendingComplete(division.phase === 'draft' && !!division.draftState?.isDraftComplete);
+    setIsViewingCompletedDraftBoard(false);
   }, []);
 
   const resetDraft = useCallback(async (
@@ -106,6 +98,7 @@ export const useDraft = (_divisionId?: string) => {
     preservedPlayers?: Player[],
     preservedTeams?: Team[]
   ) => {
+    setIsViewingCompletedDraftBoard(false);
     setPendingRuleWarnings(null);
     const divisionId = currentDivisionId.current;
 
@@ -278,7 +271,7 @@ export const useDraft = (_divisionId?: string) => {
         // Check if draft is complete
         const availablePlayers = result.players.filter(p => !p.isDrafted);
         if (availablePlayers.length === 0 || result.draftState.isDraftComplete) {
-          setTimeout(() => setPendingComplete(true), 300);
+          completionTimeout.current = setTimeout(() => setPendingComplete(true), 300);
         }
       } catch (err) {
         console.error('Failed to draft player:', err);
@@ -322,12 +315,15 @@ export const useDraft = (_divisionId?: string) => {
     try {
       operationInProgress.current = true;
       setIsLoading(true);
+      if (completionTimeout.current !== null) clearTimeout(completionTimeout.current);
+      setPendingComplete(false);
       const result = await api.undoLastPick(draftStateId.current, expectedPick ?? draftState.picks[draftState.picks.length - 1]?.pick);
       setDraftState(result.draftState);
       setError(null);
 
       // If we're on complete screen, go back to draft
       if (phase === 'complete') {
+        setIsViewingCompletedDraftBoard(false);
         setPhase('draft');
       }
     } catch (err) {
@@ -427,27 +423,48 @@ export const useDraft = (_divisionId?: string) => {
     }
   }, [isLoading]);
 
+  const canFinalize = draftState.isDraftComplete
+    || draftState.players.length > 0 && draftState.players.every(player => player.isDrafted);
+  const finalizationState = useRef({ phase, canFinalize });
+  finalizationState.current = { phase, canFinalize };
+
   // Finalize draft and navigate to complete phase
   const finalizeDraft = useCallback(() => {
+    if (operationInProgress.current || isLoading) return;
+    if (finalizationState.current.phase !== 'draft' || !finalizationState.current.canFinalize) {
+      setPendingComplete(false);
+      return;
+    }
     setPendingComplete(false);
+    setIsViewingCompletedDraftBoard(false);
     setPhase('complete');
-  }, []);
+  }, [isLoading]);
 
   // Cancel pending complete (go back to review draft)
   const cancelPendingComplete = useCallback(() => {
     setPendingComplete(false);
   }, []);
 
+  const requestFinalization = useCallback(() => {
+    if (!operationInProgress.current && !isLoading
+      && finalizationState.current.phase === 'draft' && finalizationState.current.canFinalize) {
+      setPendingComplete(true);
+    }
+  }, [isLoading]);
+
   // Clear mandatory pick error
   const clearMandatoryPickError = useCallback(() => {
     setMandatoryPickError(null);
   }, []);
 
-  // Go back to draft board from complete phase (bypasses auto-complete detection)
+  // Reviewing the board does not change the finalized draft phase.
   const returnToDraftBoard = useCallback(() => {
-    overrideCompleteDetection.current = true;
     setPendingComplete(false);
-    setPhase('draft');
+    setIsViewingCompletedDraftBoard(true);
+  }, []);
+
+  const viewResults = useCallback(() => {
+    setIsViewingCompletedDraftBoard(false);
   }, []);
 
   return {
@@ -468,6 +485,7 @@ export const useDraft = (_divisionId?: string) => {
     executeTrade,
     finalizeDraft,
     cancelPendingComplete,
+    requestFinalization,
     isLoading,
     error,
     mandatoryPickError,
@@ -476,5 +494,7 @@ export const useDraft = (_divisionId?: string) => {
     confirmOverride,
     clearMandatoryPickError,
     returnToDraftBoard,
+    isViewingCompletedDraftBoard,
+    viewResults,
   };
 };

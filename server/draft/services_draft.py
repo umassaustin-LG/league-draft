@@ -430,9 +430,6 @@ class DraftService:
             draft_state.mandatory_sibling_name = ""
             draft_state.save()
 
-            division.phase = "complete"
-            division.completed_at = timezone.now()
-            division.save()
             return
 
         # Calculate next position

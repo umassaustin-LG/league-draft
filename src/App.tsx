@@ -133,6 +133,7 @@ function App() {
     executeTrade,
     finalizeDraft,
     cancelPendingComplete,
+    requestFinalization,
     isLoading,
     mandatoryPickError,
     error: draftError,
@@ -141,6 +142,8 @@ function App() {
     confirmOverride,
     clearMandatoryPickError,
     returnToDraftBoard,
+    isViewingCompletedDraftBoard,
+    viewResults,
   } = useDraft(activeDivision?.id);
 
   // Server enforces the same rule on the voice copilot token endpoint.
@@ -261,7 +264,7 @@ function App() {
         });
       }
     }
-  }, [phase, activeDivision?.id, canEditDivision, divisionStateLoaded]);
+  }, [phase, activeDivision?.phase, activeDivision?.id, canEditDivision, divisionStateLoaded]);
 
   // Browser history management - handle back/forward navigation
   // Strategy: Push a state entry on load, and when user presses back,
@@ -1176,8 +1179,10 @@ function App() {
           />
         )}
 
-        {phase === 'draft' && (draftState.currentTeamId || pendingComplete || draftState.isDraftComplete) && (
+        {(phase === 'draft' || isViewingCompletedDraftBoard) && (draftState.currentTeamId || pendingComplete || draftState.isDraftComplete) && (
           <DraftBoard
+            onBackToDivisions={handleBackToSelector}
+            onViewResults={phase === 'complete' ? viewResults : undefined}
             draftState={draftState}
             controls={{
               onDraftPlayer: draftPlayer,
@@ -1187,6 +1192,7 @@ function App() {
               pendingComplete,
               onFinalizeDraft: finalizeDraft,
               onCancelComplete: cancelPendingComplete,
+              onRequestComplete: requestFinalization,
             }}
             error={draftError}
             pendingRuleWarnings={pendingRuleWarnings}
@@ -1219,7 +1225,7 @@ function App() {
           </div>
         )}
 
-        {phase === 'complete' && (
+        {phase === 'complete' && !isViewingCompletedDraftBoard && (
           <div>
             {/* Back button - separate bar above content */}
             <div className="bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-2">

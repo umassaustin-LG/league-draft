@@ -28,9 +28,12 @@ interface DraftControls {
   pendingComplete: boolean;
   onFinalizeDraft: () => void;
   onCancelComplete: () => void;
+  onRequestComplete?: () => void;
 }
 
 interface DraftBoardProps {
+  onBackToDivisions?: () => void;
+  onViewResults?: () => void;
   draftState: DraftState;
   controls?: DraftControls;
   rosterSize?: number;
@@ -73,6 +76,8 @@ export const DraftBoard = ({
   mandatoryPickError,
   onClearMandatoryPickError,
   voiceCopilotDivisionId,
+  onBackToDivisions,
+  onViewResults,
 }: DraftBoardProps) => {
   const siblingState = useMemo(() => getDraftSiblingState(
     savedDraftState,
@@ -423,6 +428,22 @@ export const DraftBoard = ({
       )}
 
       <div className="max-w-7xl mx-auto">
+        {(draftState.isDraftComplete || onViewResults) && onBackToDivisions && (
+          <button onClick={onBackToDivisions} className="mb-4 rounded-button border border-rule px-4 py-2 text-ink hover:border-rule-strong">
+            Back to Divisions
+          </button>
+        )}
+        {onViewResults && (
+          <button onClick={onViewResults} className="mb-4 ml-2 rounded-button border border-rule px-4 py-2 text-ink hover:border-rule-strong">
+            View Results
+          </button>
+        )}
+        {!onViewResults && controls?.onRequestComplete && !controls.pendingComplete
+          && (draftState.isDraftComplete || draftState.players.length > 0 && availablePlayers.length === 0) && (
+          <button onClick={controls.onRequestComplete} disabled={isLoading} className="mb-4 ml-2 rounded-button border border-rule px-4 py-2 text-ink hover:border-rule-strong">
+            Finalize draft
+          </button>
+        )}
         {siblingState.released.length > 0 && (
           <div role="status" className="mb-4 border border-rule bg-surface p-4 text-ink">
             Sibling rule could not be honored for {siblingState.released.map(player => player.name).join(', ')}:

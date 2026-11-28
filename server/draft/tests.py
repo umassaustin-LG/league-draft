@@ -935,6 +935,32 @@ class CrossTenantTestBase(TestCase):
         ]
 
 
+class CompletedDivisionSummaryTests(CrossTenantTestBase):
+    def test_finished_draft_is_not_listed_as_in_progress_even_with_legacy_phase(self):
+        self.victim_division.phase = "draft"
+        self.victim_division.save()
+        state = DraftState.objects.create(division=self.victim_division, draft_format="straight")
+        self.client.force_login(self.victim_admin)
+        self.assertEqual(self.client.get("/api/divisions/").json()[0]["phase"], "draft")
+        url = f"/api/divisions/{self.victim_division.id}/?include=all"
+        self.assertEqual(self.client.get(url).json()["phase"], "draft")
+        state.is_draft_complete = True
+        state.save()
+        self.assertEqual(self.client.get(url).json()["phase"], "draft")
+        self.victim_division.completed_at = state.updated_at
+        self.victim_division.save(update_fields=["completed_at"])
+        self.assertEqual(self.client.get("/api/divisions/").json()[0]["phase"], "complete")
+        for user in (self.victim_admin, self.viewer):
+            self.client.force_login(user)
+            self.assertEqual(self.client.get(url).json()["phase"], "complete")
+            self.assertTrue(self.client.get(url).json()["draft_state"]["is_draft_complete"])
+
+    def test_summary_and_detail_keep_the_phase_without_a_draft_state(self):
+        self.client.force_login(self.viewer)
+        self.assertEqual(self.client.get("/api/divisions/").json()[0]["phase"], self.victim_division.phase)
+        self.assertEqual(self.client.get(f"/api/divisions/{self.victim_division.id}/").json()["phase"], self.victim_division.phase)
+
+
 class TeamBuilderSettingsTests(CrossTenantTestBase):
     def test_settings_round_trip_and_clear(self):
         self.client.force_login(self.victim_admin)
@@ -1359,6 +1385,21 @@ class DraftSafetyTests(CrossTenantTestBase):
     def pick(self, index):
         self.state = DraftService.draft_player(self.state.id, self.players[index].id, self.state.current_team_id, actor=self.victim_admin)
 
+    def test_final_pick_waits_for_explicit_finalization(self):
+        for index in range(4):
+            self.pick(index)
+        self.assertTrue(self.state.is_draft_complete)
+        self.division.refresh_from_db()
+        self.assertEqual(self.division.phase, "draft")
+        self.assertIsNone(self.division.completed_at)
+        self.client.force_login(self.victim_admin)
+        url = f"/api/divisions/{self.division.id}/"
+        self.assertEqual(self.client.get(url).json()["phase"], "draft")
+        response = self.client.patch(url, json.dumps({"phase": "complete"}), content_type="application/json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["phase"], "complete")
+        self.assertIsNotNone(response.json()["completed_at"])
+
     def reach_last_sibling(self):
         from .services_readiness import RuleCheckError
 
@@ -1467,6 +1508,9 @@ class DraftSafetyTests(CrossTenantTestBase):
         self.state = DraftService.skip_pick(self.state.id, self.state.current_team_id)
         self.assertTrue(self.state.is_draft_complete)
         self.assertTrue(self.state.picks.order_by("pick").last().was_skipped)
+        self.division.refresh_from_db()
+        self.assertEqual(self.division.phase, "draft")
+        self.assertIsNone(self.division.completed_at)
         self.players[3].refresh_from_db()
         self.assertEqual(self.players[3].coach_team_id, self.victim_teams[0].id)
         self.assertFalse(self.players[3].is_drafted)
